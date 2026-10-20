@@ -1,99 +1,93 @@
-"""sample2 controller."""
+"""c2_controller"""
 
-# You may need to import some classes of the controller module. Ex:
-#  from controller import Robot, Motor, DistanceSensor
 from controller import Robot
 import math
 from collections import deque
 
-# create the Robot instance.
+# ROBOT DEFINITIONS
+# You should insert a getDevice-like function in order to get the
+# instance of a device of the robot.
 robot = Robot()
-
-# get the time step of the current world.
 timestep = int(robot.getBasicTimeStep())
 
-# You should insert a getDevice-like function in order to get the
-# instance of a device of the robot. Something like:
-#  motor = robot.getDevice('motorname')
 gps = robot.getDevice('gps')
-gps.enable(timestep)
-
 camera = robot.getDevice('camera')
-camera.enable(timestep)
-
 compass = robot.getDevice('compass')
-compass.enable(timestep)
-
 left_motor = robot.getDevice('left wheel motor')
 right_motor = robot.getDevice('right wheel motor')
+
+gps.enable(timestep)
+camera.enable(timestep)
+compass.enable(timestep)
 left_motor.setPosition(float('inf'))
 right_motor.setPosition(float('inf'))
 
-initial_gps = None
+initial_coordinates = None
 
-# # Line-following controller parameters
+
+# NAVIGATION DEFINITIONS
+MapNodes = []
+ExplorationStack = []
+
+# # Line-following PD controller parameters
 # Kp = 0.15
 # Kd = 0.05
 # exponent = 1.0
 # cruiseVelocity = 3.0
 # maxCorrection = 2.0
 # maxVelocity = 6.28
-
 # previous_error = 0.0
 # last_direction = 0
-
 # width = camera.getWidth()
 
+# ROBOT CONTROL METHODS
+# -----------------------------
 
-# Function to rotate the robot 90 degrees.
 def rotate_90():
+    """ Turns the robot 90 degrees."""
+    
     print("Rotating the robot 90 degrees...")
-    # Get the current orientation of the robot
+    
     compass_values = compass.getValues()
-    #Compass gives[x,y,z])
     current_orientation = math.atan2(compass_values[1], compass_values[0])
+  
     print('current_orientation', current_orientation)
+    
     # Calculate the target orientation (90 degrees from current)
     target_orientation = current_orientation + math.pi / 2
 
     # Normalize the target orientation to be within -pi to pi
-    if target_orientation > math.pi:
-        target_orientation -= 2 * math.pi
+    if target_orientation > math.pi: target_orientation -= 2 * math.pi
 
     # Rotate the robot until it reaches the target orientation
     while True:
         compass_values = compass.getValues()
-        # print('compass', compass_values)
         current_orientation = math.atan2(compass_values[1], compass_values[0])
 
-        # Check if the robot has reached the target orientation
         if abs(current_orientation - target_orientation) < 0.01:  # Allow a small margin of error
             break
 
-        # Set motor speeds to rotate the robot (this is a placeholder, actual motor control code needed)
+        # Set motor speeds to rotate the robot
+        # TODO this is a placeholder, actual motor control code needed
         left_motor.setVelocity(1.0)
         right_motor.setVelocity(-1.0)
 
         robot.step(timestep)
 
-    # Stop the motors after rotation
     left_motor.setVelocity(0.0)
     right_motor.setVelocity(0.0)
 
-# gets 2 
+
+def find_line():
+    """ Uses bottom half of camera to find line."""
     
-
-def find_line(row):
-
+    image = camera.getImageArray()[camera.getHeight()//2]
     difference_threshold = 100
-
-    brightness = [sum(pixel) for pixel in row]
-
+    brightness = [sum(pixel) for pixel in image]
     falling_edge = -1   # WHITE -> BLACK
     rising_edge = -1    # BLACK -> WHITE
 
     line_brightness = sum(brightness) / len(brightness)
-
     difference = [0] * (len(brightness) - 1)
 
     for i in range(1, len(brightness)):
@@ -109,13 +103,10 @@ def find_line(row):
             rising_edge = i
             break
 
-    #print(difference)
-
     # --------------------------------------------------
     # TWO EDGES
     # WHITE -> BLACK -> WHITE
     # --------------------------------------------------
-
     if falling_edge != -1 and rising_edge != -1:
 
         line_position = falling_edge
@@ -127,11 +118,10 @@ def find_line(row):
     # ONE EDGE
     # WHITE -> BLACK -> edge of camera
     # --------------------------------------------------
-
     if falling_edge != -1:
 
         line_position = falling_edge
-        line_width = len(row) - falling_edge
+        line_width = len(image) - falling_edge
 
         return line_position, line_width
 
@@ -139,7 +129,6 @@ def find_line(row):
     # BLACK -> WHITE
     # line starts outside the camera
     # --------------------------------------------------
-
     if rising_edge != -1:
 
         line_position = 0
@@ -147,29 +136,22 @@ def find_line(row):
 
         return line_position, line_width
 
-
-
-    # --------------------------------------------------
-    # Everything is black
-    # --------------------------------------------------
-    # if line_brightness < 500:
-    #     return 0, len(row)
-
     # --------------------------------------------------
     # NOTHING FOUND
     # --------------------------------------------------
-
     return -1, 0
+
 #---
 #        |
 #      -- --
 #        |
 #---
 def caracterize_line(line_position, line_width):
-    # find where the robot is facing:
+    """Checks if node contains line to another node."""
+    
     compass_values = compass.getValues()
 
-    #get the vector with the most absolute value, this is the direction the robot is facing
+    # get the vector with the most absolute value, this is the direction the robot is facing
     if abs(compass_values[0]) > abs(compass_values[1]):
         if compass_values[0] > 0:
             facing = "N"
@@ -186,23 +168,115 @@ def caracterize_line(line_position, line_width):
     else:
         return "n" + facing
 
-Nodes = []
-toexplore = []
 
-def infereNodes(node_location=None):
-    # Get the current node from the Nodes list
-    current_node = next((node for node in Nodes if node["location"] == node_location), None)
+def follow_line(line_position, line_width):
+    """Centers Robot on line using the middle of camera."""
+
+    line_center = line_position + line_width / 2
+    camera_center = camera.getWidth() / 2
+    error = line_center - camera_center
+
+    # Adjust wheel speeds to center the line
+    # TODO make both constants
+    speed = 5.0
+    correction = 0.02 * error
+
+    left_motor.setVelocity(speed + correction)
+    right_motor.setVelocity(speed - correction)
+
+
+def move_direction(direction):
+    """Centers Robot on line using the middle of camera."""
     
-    # if current_node is None:
-    #     print(current_node)
-    #     print("Error: Current node not found in Nodes list.")
-    #     return
+    # TODO make this an enum
+    directions = {
+        "n": 0.0,
+        "e": math.pi / 2,
+        "s": math.pi,
+        "w": -math.pi / 2
+    }
+    
+    initial_coordinates = gps.getValues()
+    direction = direction.lower()
+
+    # Validate the input
+    if direction not in directions:
+        print("Invalid direction. Choose n, e, s, or w.")
+        return
+
+    target_orientation = directions[direction]
+
+    # TODO this part rotate_90() in a better way, may extract.
+    # Rotate until the robot faces the target direction
+    while True:
+        compass_values = compass.getValues()
+        current_orientation = math.atan2(
+            compass_values[1], compass_values[0]
+        )
+
+        # Calculate the shortest angular difference
+        angle_difference = math.atan2(
+            math.sin(target_orientation - current_orientation),
+            math.cos(target_orientation - current_orientation)
+        )
+
+        # Check if the target orientation is reached
+        if abs(angle_difference) < 0.01:
+            break
+
+        # Rotate in the correct direction
+        rotation_speed = 1.0
+        if angle_difference > 0:
+            left_motor.setVelocity(rotation_speed)
+            right_motor.setVelocity(-rotation_speed)
+        else:
+            left_motor.setVelocity(-rotation_speed)
+            right_motor.setVelocity(rotation_speed)
+
+        robot.step(timestep)
+
+    if direction == "n":
+        target_location = (initial_coordinates[0], round((initial_coordinates[1] + 0.15) / 0.15) * 0.15)
+    elif direction == "e":
+        target_location = (round((initial_coordinates[0] + 0.15) / 0.15) * 0.15, initial_coordinates[1])
+    elif direction == "s":
+        target_location = (initial_coordinates[0], round((initial_coordinates[1] - 0.15) / 0.15) * 0.15)
+    elif direction == "w":
+        target_location = (round((initial_coordinates[0] - 0.15) / 0.15) * 0.15, initial_coordinates[1])
+
+    target_location = tuple(round(coord, 2) for coord in target_location)
+
+    # add 0.15 to the gps location to move the robot forward in the facing direction
+    while True:
+        gps_values = gps.getValues()
+        # print("Current GPS:", gps_values, "Target GPS:", target_location)
+
+        # Check if the robot has reached the target location
+        if direction == "n" or direction == "s":
+            if abs(gps_values[1] - target_location[1]) < 0.01:
+                break
+        else:  # direction == "e" or direction == "w"
+            if abs(gps_values[0] - target_location[0]) < 0.01:
+                break
+
+        line_position, line_width = find_line()
+        follow_line(line_position, line_width)
+        robot.step(timestep)
+
+    left_motor.setVelocity(0.0)
+    right_motor.setVelocity(0.0)
+
+
+def inferNodes(node_location=None):
+    """Populates node info"""
+    
+    current_node = next((node for node in MapNodes if node["location"] == node_location), None)
     
     # Check the existing lines in the current node
     existing_lines = current_node["lines"]
 
-
     # Infer the presence of lines in the adjacent nodes based on the current node's lines
+    # TODO use gs0, gs2 and camera for this
     for line in existing_lines:
         line_type, direction = line[0], line[1]
         if line_type.startswith("n"):  # Only infer if there's a line present
@@ -236,43 +310,44 @@ def infereNodes(node_location=None):
             else:
                 continue  # Skip if the direction is not recognized
         
-        if any(node["location"] == adjacent_node_location for node in Nodes):
+        if any(node["location"] == adjacent_node_location for node in MapNodes):
             continue
 
         # Check if the node is on the list of the explored nodes if not, add it to the list of nodes to explore
-        adjacent_node = next((node for node in Nodes if node["location"] == adjacent_node_location), None)
+        adjacent_node = next((node for node in MapNodes if node["location"] == adjacent_node_location), None)
         if adjacent_node is None:
             # If the adjacent node is not in the Nodes list, add it to the toexplore list with the inferred line type
-            if adjacent_node_location not in toexplore:
-                toexplore.append({"location": adjacent_node_location, "lines": [adj_line_type]})
+            if adjacent_node_location not in ExplorationStack:
+                ExplorationStack.append({"location": adjacent_node_location, "lines": [adj_line_type]})
         else:
             # If the adjacent node is already in the Nodes list, update its lines if necessary
             if line_type[0] not in adjacent_node["lines"]:
                 adjacent_node["lines"].append(adj_line_type)
 
     #check if there's any toexplore node that became complete, if so, remove it from the toexplore list add it to the Nodes list
-    for node in toexplore[:]:  # Iterate over a copy of the list
+    for node in ExplorationStack[:]:  # Iterate over a copy of the list
         if len(node["lines"]) == 4:  # Assuming a node is complete if it has lines in all four directions
-            Nodes.append(node)
-            toexplore.remove(node)
+            MapNodes.append(node)
+            ExplorationStack.remove(node)
             print(f"Node at {node['location']} is now complete and added to Nodes list.")
 
-    
 
+# NAVIGATION METHODS
+# -----------------------------
 
-def exploreNode(node_location=None):
-
-    # Get the current node from the Nodes list
-    current_node = next((node for node in Nodes if node["location"] == node_location), None)
+def exploreNode(node_location = None):
+    """Add lines from/to current node."""
+    current_node = next((node for node in MapNodes if node["location"] == node_location), None)
     
     if current_node is None:
         print("Error: Current node not found in Nodes list.")
         return
     
+    # TODO sub this to gs0 + gs2 + camera
     for direction in range(4):  # Check all four directions
         
         # Capture camera image and find line
-        line_position, line_width = find_line(camera.getImageArray()[camera.getHeight()//2])
+        line_position, line_width = find_line()
         
         # Characterize the line based on robot's orientation
         line_characterization = caracterize_line(line_position, line_width)
@@ -282,121 +357,14 @@ def exploreNode(node_location=None):
 
         rotate_90()  # Rotate the robot 90 degrees to check the next direction
 
-import math
 
-
-def follow_line(line_position, line_width):
-
-    # if line_position < 0 or line_width <= 0:
-    #     left_motor.setVelocity(0)
-    #     right_motor.setVelocity(0)
-    #     return
-
-    # Find the center of the line and camera
-    line_center = line_position + line_width / 2
-    camera_center = camera.getWidth() / 2
-
-    # Calculate the error
-    error = line_center - camera_center
-
-    # Adjust wheel speeds to center the line
-    speed = 5.0
-    correction = 0.02 * error
-
-    left_motor.setVelocity(speed + correction)
-    right_motor.setVelocity(speed - correction)
-
-
-def move_direction(direction):
-    # Define target orientations (in radians)
-    directions = {
-        "n": 0.0,
-        "e": math.pi / 2,
-        "s": math.pi,
-        "w": -math.pi / 2
-    }
-    initial_gps = gps.getValues()
-
-    # Validate the input
-    direction = direction.lower()
-    if direction not in directions:
-        print("Invalid direction. Choose n, e, s, or w.")
-        return
-
-    target_orientation = directions[direction]
-
-    # Rotate until the robot faces the target direction
-    while True:
-        compass_values = compass.getValues()
-        current_orientation = math.atan2(
-            compass_values[1], compass_values[0]
-        )
-
-        # Calculate the shortest angular difference
-        angle_difference = math.atan2(
-            math.sin(target_orientation - current_orientation),
-            math.cos(target_orientation - current_orientation)
-        )
-
-        # Check if the target orientation is reached
-        if abs(angle_difference) < 0.01:
-            break
-
-        # Rotate in the correct direction
-        rotation_speed = 1.0
-        if angle_difference > 0:
-            left_motor.setVelocity(rotation_speed)
-            right_motor.setVelocity(-rotation_speed)
-        else:
-            left_motor.setVelocity(-rotation_speed)
-            right_motor.setVelocity(rotation_speed)
-
-        robot.step(timestep)
-
-    #if N:
-    if direction == "n":
-        target_location = (initial_gps[0], round((initial_gps[1] + 0.15) / 0.15) * 0.15)
-    elif direction == "e":
-        target_location = (round((initial_gps[0] + 0.15) / 0.15) * 0.15, initial_gps[1])
-    elif direction == "s":
-        target_location = (initial_gps[0], round((initial_gps[1] - 0.15) / 0.15) * 0.15)
-    elif direction == "w":
-        target_location = (round((initial_gps[0] - 0.15) / 0.15) * 0.15, initial_gps[1])
-
-    target_location = tuple(round(coord, 2) for coord in target_location)
-
-    # add 0.15 to the gps location to move the robot forward in the facing direction
-    while True:
-        gps_values = gps.getValues()
-        # print("Current GPS:", gps_values, "Target GPS:", target_location)
-
-        # Check if the robot has reached the target location
-        if direction == "n" or direction == "s":
-            if abs(gps_values[1] - target_location[1]) < 0.01:
-                break
-        else:  # direction == "e" or direction == "w"
-            if abs(gps_values[0] - target_location[0]) < 0.01:
-                break
-
-         # Capture camera image and find line
-        line_position, line_width = find_line(camera.getImageArray()[camera.getHeight()//2])
-                
-
-        # Move forward
-        follow_line(line_position, line_width)
-
-        robot.step(timestep)
-
-    left_motor.setVelocity(0.0)
-    right_motor.setVelocity(0.0)
-
-def bfs(start, goal):
+def dfs(start, destination):
     """Find a path between nodes using the discovered line graph.
 
     Returns a list of directions, for example ['N', 'E', 'S'].
     Returns None when no path exists.
     """
-    if start == goal:
+    if start == destination:
         return []
 
     movements = {
@@ -412,10 +380,7 @@ def bfs(start, goal):
     while queue:
         current_node, path = queue.popleft()
 
-        node_data = next(
-            (node for node in Nodes if node["location"] == current_node),
-            None
-        )
+        node_data = next((node for node in MapNodes if node["location"] == current_node), None)
 
         if node_data is None:
             continue
@@ -437,7 +402,7 @@ def bfs(start, goal):
 
             next_path = path + [direction]
 
-            if next_node == goal:
+            if next_node == destination:
                 return next_path
 
             if next_node not in visited:
@@ -447,31 +412,29 @@ def bfs(start, goal):
     return None
 
 
-def moveto_node(node_location, next_node_location):
-    """Move from one node to another using the BFS-generated path."""
-    path = bfs(node_location, next_node_location)
+def navigate_to_node(current_node, destination_node):
+    """Move from one node to another using the DFS-generated path."""
+    path = dfs(current_node, destination_node)
 
     if path is None:
-        print(
-            "No path found from",
-            node_location,
-            "to",
-            next_node_location
-        )
+        print("No path found from", current_node, "to", destination_node)
         return
 
     print("Path:", path)
 
-    for direction in path:
-        move_direction(direction)
+    for direction in path: move_direction(direction)
+
+
+# PRINTING METHODS
+# -----------------------------
 
 def printmap():
+    """Create a grid representation of the map"""
     # map is 21 lines height and 49 characters width, with the origin at the location (11,25)
 
-    # Create a grid representation of the map
     grid = [[" " for _ in range(50)] for _ in range(22)]
 
-    for node in Nodes:
+    for node in MapNodes:
         x, y = node["location"]
         # Normalize the coordinates to fit the grid
         grid_x = int((x * 2) + 25)  # Adjust based on your coordinate system
@@ -503,47 +466,63 @@ def printmap():
         print("".join(row))
 
 
-# Main loop:
-# - perform simulation steps until Webots is stopping the controller
-while robot.step(timestep) != -1:
-    if initial_gps is None:
-        initial_gps = gps.getValues()
-        print('initial_gps', initial_gps)
-        print(find_line(camera.getImageArray()[camera.getHeight()//2]))
-        
-    #print("customData",robot.getCustomData())
-    gps_values = gps.getValues()
-    compass_values = compass.getValues()
-    #Normalize the gps location to the initial position
-    node_location = tuple(round(round((gps_values[i] - initial_gps[i]) / 0.05) * 0.05 / 0.15)for i in range(2) )
-    print ("Current node location:", node_location)
-    print(Nodes, toexplore)
-    if node_location not in [Nodes[i]["location"] for i in range(len(Nodes))]:
-        #append an empty node
-        Nodes.append({"location": node_location, "lines": []})
-        exploreNode(node_location)
-        infereNodes(node_location)
-
-    #check if there's any node to explore
-    if toexplore:
+def main():
+    global initial_coordinates
     
-        printmap()
-        next_node_location = toexplore.pop()["location"]
-        # check if node has valid lines
-
-        # print("Next node to explore:", next_node_location)
-
-        moveto_node(node_location, next_node_location)
-        exploreNode(next_node_location)
-    else:
-        print("All nodes explored. No more nodes to explore.")
-        break
-        
+    # TODO
+    # 1. configure robot, initial position and next nodes
     
-
-          # Exit after one iteration for testing purposes
+    # 2. While there are nodes to explore:
+    
+        # a. Control robot to next node
+            #   i. STRAIGTH = motors
+            #  ii. TURN
+            # iii. STOP
+            #  iv. LOST
+        # b. Camera: use to anticipate turn and mark node as goal (straight)
+        # c. If GS0 and GS2 see black, add to next nodes to stack
+        # d. If all GSx see white = dead end
+        # e. add to next nodes to stack
+        # f. Pop next node to explore 
+        # g. find shortest path to next node
+    
+    # TODO: steps by nodes left
+    while robot.step(timestep) != -1:
+            
+        if initial_coordinates is None:
+            initial_coordinates = gps.getValues()
+            print('initial_coordinates', initial_coordinates)
+            print(find_line())
+            
+        current_coordinates = gps.getValues()
+        current_direction = compass.getValues()
+        # Normalize the gps location to the initial position
+        current_node = tuple(round(round((
+            current_coordinates[i] - initial_coordinates[i]) / 0.05) * 0.05 / 0.15) for i in range(2))
         
-print("Nodes", Nodes)
-print("toexplore", toexplore)
+        print ("Current node location:", current_node)
+        print(MapNodes, ExplorationStack)
+        
+        if current_node not in [MapNodes[i]["location"] for i in range(len(MapNodes))]:
+            # append an new empty node to be explored
+            MapNodes.append({"location": current_node, "lines": []})
+            exploreNode(current_node)
+            inferNodes(current_node)
 
-# Enter here exit cleanup code.
+        # check next node to explore
+        if ExplorationStack:
+            printmap()
+            destination_node = ExplorationStack.pop()["location"]
+            navigate_to_node(current_node, destination_node)
+            exploreNode(destination_node)
+            
+        else:
+            print("All nodes explored. No more nodes to explore.")
+            break
+
+            # Exit after one iteration for testing purposes
+            
+    print("Nodes", MapNodes)
+    print("toexplore", ExplorationStack)
+
+main()
