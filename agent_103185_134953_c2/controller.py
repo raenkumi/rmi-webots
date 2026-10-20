@@ -327,10 +327,10 @@ def exploreNode(node_location = None):
 
 
 def dfs(start, destination):
-    """Find a path between nodes using the discovered line graph.
+    """Depth-first search over the discovered line graph.
 
     Returns a list of directions, for example ['N', 'E', 'S'].
-    Returns None when no path exists.
+    Returns None when no path exists in the known graph.
     """
     if start == destination:
         return []
@@ -342,42 +342,53 @@ def dfs(start, destination):
         "W": (-1, 0),
     }
 
-    queue = deque([(start, [])])
+    stack = [(start, [])]
     visited = {start}
 
-    while queue:
-        current_node, path = queue.popleft()
+    while stack:
+        cell, path = stack.pop()   # LIFO: depth-first
 
-        node_data = next((node for node in MapNodes if node["location"] == current_node), None)
+        node_data = next(
+            (node for node in MapNodes if node["location"] == cell),
+            None
+        )
 
+        # frontier cells are not in MapNodes: they can be a
+        # destination (goal check below) but never traversed
         if node_data is None:
             continue
 
         for line in node_data["lines"]:
+            # only follow confirmed lines ("lX"), never "nX"
             if len(line) < 2 or line[0] != "l":
                 continue
 
             direction = line[1].upper()
-
             if direction not in movements:
                 continue
 
             dx, dy = movements[direction]
-            next_node = (
-                current_node[0] + dx,
-                current_node[1] + dy
-            )
+            next_cell = (cell[0] + dx, cell[1] + dy)
 
-            next_path = path + [direction]
+            if next_cell == destination:
+                return path + [direction]
 
-            if next_node == destination:
-                return next_path
-
-            if next_node not in visited:
-                visited.add(next_node)
-                queue.append((next_node, next_path))
+            if next_cell not in visited:
+                visited.add(next_cell)
+                stack.append((next_cell, path + [direction]))
 
     return None
+
+
+def nearest_unexplored(current_node):
+    if not ExplorationStack:
+        return None
+
+    def manhattan(node):
+        x, y = node["location"]
+        return abs(x - current_node[0]) + abs(y - current_node[1])
+
+    return min(ExplorationStack, key=manhattan)["location"]
 
 
 def navigate_to_node(current_node, destination_node):
@@ -460,7 +471,6 @@ def main():
         # f. Pop next node to explore 
         # g. find shortest path to next node
     
-    # TODO: steps by nodes left
     while robot.step(timestep) != -1:
             
         if initial_coordinates is None:
@@ -488,11 +498,16 @@ def main():
             map = build_map_grid()
             print_map(map)
             save_map(map)
-            
-            destination_node = ExplorationStack.pop()["location"]
+
+            destination_node = nearest_unexplored(current_node)
+            ExplorationStack[:] = [
+                node for node in ExplorationStack
+                if node["location"] != destination_node
+            ]
+
             navigate_to_node(current_node, destination_node)
             exploreNode(destination_node)
-            
+
         else:
             print("All nodes explored. No more nodes to explore.")
             break
