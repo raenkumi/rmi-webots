@@ -4,6 +4,7 @@ from controller import Robot
 import math
 from collections import deque
 
+
 # ROBOT DEFINITIONS
 # You should insert a getDevice-like function in order to get the
 # instance of a device of the robot.
@@ -39,6 +40,7 @@ ExplorationStack = []
 # previous_error = 0.0
 # last_direction = 0
 # width = camera.getWidth()
+
 
 # ROBOT CONTROL METHODS
 # -----------------------------
@@ -394,42 +396,48 @@ def navigate_to_node(current_node, destination_node):
 # PRINTING METHODS
 # -----------------------------
 
-def printmap():
-    """Create a grid representation of the map"""
-    # map is 21 lines height and 49 characters width, with the origin at the location (11,25)
-
-    grid = [[" " for _ in range(50)] for _ in range(22)]
+def build_map_grid():
+    """Builds the .map grid: 21 lines x 49 characters"""
+    grid = [[" " for _ in range(49)] for _ in range(21)]
 
     for node in MapNodes:
         x, y = node["location"]
-        # Normalize the coordinates to fit the grid
-        grid_x = int((x * 2) + 25)  # Adjust based on your coordinate system
-        grid_y = -int((y * 2 ) + 11)  # Adjust based on your coordinate system
+        grid_x = 24 + x * 2
+        grid_y = 10 - y * 2   # +y (north) goes up in the file
+
+        if not (0 <= grid_y < 21 and 0 <= grid_x < 49):
+            continue
 
         for line in node["lines"]:
-            if len(line) < 2:
+            if len(line) < 2 or line[0] != "l":
                 continue
 
-            line_type, direction = line[0], line[1]
+            direction = line[1]
 
-            if line_type == "l":
-                if direction == "N":
-                    if grid_y > 0:
-                        grid[grid_y - 1][grid_x] = "|"
-                elif direction == "E":
-                    if grid_x < 48:
-                        grid[grid_y][grid_x + 1] = "-"
-                elif direction == "S":
-                    if grid_y < 20:
-                        grid[grid_y + 1][grid_x] = "|"
-                elif direction == "W":
-                    if grid_x > 0:
-                        grid[grid_y][grid_x - 1] = "-"
+            if direction == "N" and grid_y > 0:
+                grid[grid_y - 1][grid_x] = "|"
+            elif direction == "S" and grid_y < 20:
+                grid[grid_y + 1][grid_x] = "|"
+            elif direction == "E" and grid_x < 48:
+                grid[grid_y][grid_x + 1] = "-"
+            elif direction == "W" and grid_x > 0:
+                grid[grid_y][grid_x - 1] = "-"
 
-    grid[11][25] = "I"  # Mark the origin
-    # Print the grid
-    for row in grid:
+    grid[10][24] = "I"
+    return grid
+
+
+def print_map(map):
+    """Prints the map"""
+    for row in map:
         print("".join(row))
+        
+
+def save_map(map, filename="robot.map"):
+    """Writes the current map to a .map file"""
+    with open(filename, "w") as f:
+        for row in map:
+            f.write("".join(row) + "\n")
 
 
 def main():
@@ -477,7 +485,10 @@ def main():
 
         # check next node to explore
         if ExplorationStack:
-            printmap()
+            map = build_map_grid()
+            print_map(map)
+            save_map(map)
+            
             destination_node = ExplorationStack.pop()["location"]
             navigate_to_node(current_node, destination_node)
             exploreNode(destination_node)
