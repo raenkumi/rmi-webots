@@ -43,34 +43,35 @@ ExplorationStack = []
 # ROBOT CONTROL METHODS
 # -----------------------------
 
-def rotate_90():
-    """ Turns the robot 90 degrees."""
-    
-    print("Rotating the robot 90 degrees...")
-    
+def get_orientation():
+    """Current heading in radians (-pi..pi) from the compass."""
     compass_values = compass.getValues()
-    current_orientation = math.atan2(compass_values[1], compass_values[0])
-  
-    print('current_orientation', current_orientation)
-    
-    # Calculate the target orientation (90 degrees from current)
-    target_orientation = current_orientation + math.pi / 2
+    return math.atan2(compass_values[1], compass_values[0])
 
-    # Normalize the target orientation to be within -pi to pi
-    if target_orientation > math.pi: target_orientation -= 2 * math.pi
 
-    # Rotate the robot until it reaches the target orientation
+def rotate_to(target_orientation):
+    """Rotates in place to an absolute heading, taking the
+    shortest angular direction."""
+
     while True:
-        compass_values = compass.getValues()
-        current_orientation = math.atan2(compass_values[1], compass_values[0])
+        current_orientation = get_orientation()
 
-        if abs(current_orientation - target_orientation) < 0.01:  # Allow a small margin of error
+        # Shortest angular difference, normalized to -pi..pi
+        angle_difference = math.atan2(
+            math.sin(target_orientation - current_orientation),
+            math.cos(target_orientation - current_orientation)
+        )
+
+        if abs(angle_difference) < 0.01:
             break
 
-        # Set motor speeds to rotate the robot
-        # TODO this is a placeholder, actual motor control code needed
-        left_motor.setVelocity(1.0)
-        right_motor.setVelocity(-1.0)
+        rotation_speed = 1.0
+        if angle_difference > 0:
+            left_motor.setVelocity(rotation_speed)
+            right_motor.setVelocity(-rotation_speed)
+        else:
+            left_motor.setVelocity(-rotation_speed)
+            right_motor.setVelocity(rotation_speed)
 
         robot.step(timestep)
 
@@ -186,7 +187,8 @@ def follow_line(line_position, line_width):
 
 
 def move_direction(direction):
-    """Centers Robot on line using the middle of camera."""
+    """Rotates to the given cardinal direction, then drives one
+    cell forward while following the line."""
     
     # TODO make this an enum
     directions = {
@@ -204,36 +206,7 @@ def move_direction(direction):
         print("Invalid direction. Choose n, e, s, or w.")
         return
 
-    target_orientation = directions[direction]
-
-    # TODO this part rotate_90() in a better way, may extract.
-    # Rotate until the robot faces the target direction
-    while True:
-        compass_values = compass.getValues()
-        current_orientation = math.atan2(
-            compass_values[1], compass_values[0]
-        )
-
-        # Calculate the shortest angular difference
-        angle_difference = math.atan2(
-            math.sin(target_orientation - current_orientation),
-            math.cos(target_orientation - current_orientation)
-        )
-
-        # Check if the target orientation is reached
-        if abs(angle_difference) < 0.01:
-            break
-
-        # Rotate in the correct direction
-        rotation_speed = 1.0
-        if angle_difference > 0:
-            left_motor.setVelocity(rotation_speed)
-            right_motor.setVelocity(-rotation_speed)
-        else:
-            left_motor.setVelocity(-rotation_speed)
-            right_motor.setVelocity(rotation_speed)
-
-        robot.step(timestep)
+    rotate_to(directions[direction])
 
     if direction == "n":
         target_location = (initial_coordinates[0], round((initial_coordinates[1] + 0.15) / 0.15) * 0.15)
@@ -280,19 +253,7 @@ def inferNodes(node_location=None):
     for line in existing_lines:
         line_type, direction = line[0], line[1]
         if line_type.startswith("n"):  # Only infer if there's a line present
-            # if direction == "N":
-            #     adjacent_node_location = (node_location[0], node_location[1] + 1)
-            #     adj_line_type = "nS"  # The adjacent node would have a line facing south
-            # elif direction == "E":
-            #     adjacent_node_location = (node_location[0] + 1, node_location[1])
-            #     adj_line_type = "nW"  # The adjacent node would have a line facing west
-            # elif direction == "S":
-            #     adjacent_node_location = (node_location[0], node_location[1] - 1)
-            #     adj_line_type = "nN"  # The adjacent node would have a line facing north
-            # elif direction == "W":
-            #     adjacent_node_location = (node_location[0] - 1, node_location[1])
-            #     adj_line_type = "nE"  # The adjacent node would have a line facing east
-            continue  # Skip if the line type is not recognized
+            continue  
         else:
             # Determine the adjacent node's location based on the direction
             if direction == "N":
@@ -355,7 +316,12 @@ def exploreNode(node_location = None):
         if line_characterization not in current_node["lines"]:
             current_node["lines"].append(line_characterization)
 
-        rotate_90()  # Rotate the robot 90 degrees to check the next direction
+        # Rotate 90 degrees to check the next direction:
+        # absolute target = current heading + pi/2, normalized,
+        # so rotate_to always takes the short way
+        target = get_orientation() + math.pi / 2
+        target = math.atan2(math.sin(target), math.cos(target))
+        rotate_to(target)
 
 
 def dfs(start, destination):
