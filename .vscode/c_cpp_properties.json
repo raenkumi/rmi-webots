@@ -3,9 +3,13 @@
         {
             "name": "Linux",
             "includePath": [
-                "${default}"
+                "${default}",
+                "${workspaceFolder}/**",
+                "/usr/local/webots/include/controller/c"
             ],
-            "compilerPath": "/usr/bin/g++"
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4
