@@ -161,8 +161,9 @@ void robot_navigate(Robot *robot)
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    if ((v->gs0_v < GS_WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
-    if ((v->gs2_v < GS_WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
+    bool crossing = v->gs1_v < GS_WHITE_THRESHOLD;
+    if ((crossing && v->gs0_v < GS_WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
+    if ((crossing && v->gs2_v < GS_WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
     if (!cell_center(v->rcoord, n->target_cell)) break;
@@ -193,8 +194,8 @@ void robot_navigate(Robot *robot)
     }
     break;
 
-  case NAV_ROUTE:                               // select next cell to map and calculate route there
-    if (robot->exp.state != EXP_EXPLORE) break; // done
+  case NAV_ROUTE: // select next cell to map and calculate route there
+    if (robot->exp.state != EXP_EXPLORE) break;
 
     n->path_len = route_create(v->coord, n->goal, n->path);
     if (n->path_len <= 0)
@@ -215,8 +216,6 @@ void robot_navigate(Robot *robot)
     break;
 
   case NAV_NAVIGATE: // move robot controller to get to next cell
-    // steer at the cell center POINT each tick, so lateral offset converges
-    // (holding only a cardinal heading can never remove a sideways error)
     n->target_heading = heading_to_center(v->rcoord, n->target_cell);
 
     if (cell_center(v->rcoord, n->target_cell))
@@ -647,9 +646,16 @@ bool align_tick(Robot *robot, double wfv)
     return true;
   }
 
-  // steering correction never sleeps while driving: a standing error
-  // inside the tolerance would otherwise drift laterally forever
   double wsv = MT_KP_TURN * err;
+
+  if (wfv > 0.0 && aligned)
+  {
+    RobotValues *v = &robot->now;
+    bool l_on = v->gs0_v < GS_WHITE_THRESHOLD;
+    bool r_on = v->gs2_v < GS_WHITE_THRESHOLD;
+    if (l_on != r_on) wsv += MT_KP_LINE * (v->gs0_v - v->gs2_v);
+  }
+
   if (wsv > MT_CRUISE_VELOCITY_RAD) wsv = MT_CRUISE_VELOCITY_RAD;
   if (wsv < -MT_CRUISE_VELOCITY_RAD) wsv = -MT_CRUISE_VELOCITY_RAD;
 
