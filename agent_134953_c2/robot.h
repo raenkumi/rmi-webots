@@ -16,20 +16,26 @@
 #pragma region ROBOT DEFINITIONS
 
 // compass
-#define HEADING_TOL 0.05 // radians
+#define CP_HEADING_TOL 0.05 // radians
 
 // ground Sensors
-#define GROUND_SENSORS_COUNT 3
-#define WHITE_THRESHOLD 500
+#define GS_COUNT 3
+#define GS_WHITE_THRESHOLD 500
+
+// camera
+#define CM_DARK 80       // gray threshold
+#define CM_AHEAD_ROWS 4  // mid rows around center line
+#define CM_NEAR_BAND 8   // bottom rows near robot
+#define CM_SIDE_MIN_PX 6 // minimum LINE length from center to considered as PATH
 
 // motors
-#define WHEEL_RADIUS_CM 3.0 // unknown
-#define SCAN_VELOCITY_RAD 2.0
-#define CRUISE_VELOCITY_RAD 5.0
-#define TURN_VELOCITY_RAD 2.0
-#define MAX_VELOCITY_RAD 6.28
-#define KP_TURN 4.0  // P gain: err rad -> whell rad/s
-#define MIN_TURN 0.4 // window so P don't slow when close to target
+#define MT_WHEEL_RADIUS_CM 3.0 // unknown
+#define MT_SCAN_VELOCITY_RAD 2.0
+#define MT_CRUISE_VELOCITY_RAD 5.0
+#define MT_TURN_VELOCITY_RAD 2.0
+#define MT_MAX_VELOCITY_RAD 6.0
+#define MT_KP_TURN 4.0  // P gain: err rad -> whell rad/s
+#define MT_MIN_TURN 0.4 // window so P don't slow when close to target
 
 // camera
 typedef struct
@@ -62,7 +68,7 @@ typedef enum
 
 typedef struct
 {
-  Path edges[DIR_COUNT];
+  Path edges[MAP_DIR_COUNT];
   double accum;
   double prev_rad;
   bool primed;
@@ -128,7 +134,7 @@ typedef struct
   Coord goal;
   Coord target_cell;
   double target_heading;
-  Coord path[MAX_CELLS];
+  Coord path[MAP_MAX_CELLS];
   int path_len, path_iter;
   RobotScan scanFlags;
 } RobotNavigation;
@@ -136,7 +142,7 @@ typedef struct
 typedef struct
 {
   ExplorationState state;
-  Coord explStack[MAX_CELLS * 4];
+  Coord explStack[MAP_MAX_CELLS * 4];
   int top;
 } RobotExploration;
 
@@ -185,7 +191,6 @@ bool next_target(Robot *robot, Coord *out);
 bool scan_tick(Robot *robot);
 void scan_reset(RobotScan *scan);
 void commit_cell(Robot *robot);
-void rotate_north(Path *rel, Path *result, Direction *dir);
 
 #pragma endregion
 

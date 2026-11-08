@@ -8,7 +8,7 @@
 // ==========================================
 #pragma region WORLD DEFINITIONS
 
-#define DURATION_MS 350000
+#define WL_DURATION_MS 350000
 
 #pragma endregion
 
@@ -17,10 +17,10 @@
 
 #pragma region MAP DEFINITIONS
 
-#define MAX_CELLS (14 * 7)
+#define MAP_MAX_CELLS (14 * 7)
+#define MAP_DIR_COUNT 4
 #define CELL_DISTANCE_M 0.15
-#define GPS_TOLERANCE_M 0.01
-#define DIR_COUNT 4
+#define CELL_GPS_TOLERANCE_M 0.01
 
 typedef enum
 {
@@ -69,7 +69,7 @@ typedef struct
 
 typedef struct
 {
-  Cell cells[MAX_CELLS];
+  Cell cells[MAP_MAX_CELLS];
 } Map;
 
 #pragma endregion
@@ -93,7 +93,7 @@ Coord cell_normalize(RCoord rcoords);
 bool cell_equal(Coord a, Coord b);
 bool cell_center(RCoord a, Coord b);
 bool cell_visited(Coord cell);
-void cell_record(Coord cell, const Path edges[DIR_COUNT]);
+void cell_record(Coord cell, const Path edges[MAP_DIR_COUNT]);
 Coord cell_step(Coord cell, Direction dir);
 
 /// @brief Creates a route between start and goal cell using Dijkstra's.

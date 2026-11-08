@@ -138,10 +138,10 @@ void robot_navigate(Robot *robot)
       n->target_heading = round(v->heading_rad / (M_PI / 2)) * (M_PI / 2);
     }
 
-    if (fabs(angle_diff(n->target_heading, v->heading_rad)) < HEADING_TOL)
+    if (fabs(angle_diff(n->target_heading, v->heading_rad)) < CP_HEADING_TOL)
     {
       scan_reset(s);
-      n->state = NAV_MAP;
+      n->state = NAV_ROUTE;
     }
     break;
 
@@ -151,9 +151,9 @@ void robot_navigate(Robot *robot)
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    if ((v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img)) s->edges[headn] = LINE;
-    if ((v->gs0_v < WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
-    if ((v->gs2_v < WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
+    if ((v->gs1_v < GS_WHITE_THRESHOLD) || camera_ahead(&v->img)) s->edges[headn] = LINE;
+    if ((v->gs0_v < GS_WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
+    if ((v->gs2_v < GS_WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
     if (!cell_center(v->rcoord, n->target_cell)) break;
@@ -231,8 +231,8 @@ void robot_actuate(Robot *robot)
 //
 //   do
 //   {
-//     double spinL = spinDir == CLOCKWISE ? CRUISE_VELOCITY_RAD : -CRUISE_VELOCITY_RAD;
-//     double spinR = spinDir == CLOCKWISE ? -CRUISE_VELOCITY_RAD : CRUISE_VELOCITY_RAD;
+//     double spinL = spinDir == CLOCKWISE ? MT_CRUISE_VELOCITY_RAD : -MT_CRUISE_VELOCITY_RAD;
+//     double spinR = spinDir == CLOCKWISE ? -CRUISE_VELOCITY_RAD : MT_CRUISE_VELOCITY_RAD;
 //     wb_motor_set_velocity(robot->left_motor, spinL);
 //     wb_motor_set_velocity(robot->right_motor, spinR);
 //
@@ -258,7 +258,7 @@ bool scan_tick(Robot *robot)
   s->accum += fabs(angle_diff(v->heading_rad, s->prev_rad));
   s->prev_rad = v->heading_rad;
 
-  if (v->gs0_v < WHITE_THRESHOLD || v->gs1_v < WHITE_THRESHOLD || v->gs2_v < WHITE_THRESHOLD)
+  if (v->gs0_v < GS_WHITE_THRESHOLD || v->gs1_v < GS_WHITE_THRESHOLD || v->gs2_v < GS_WHITE_THRESHOLD)
     s->edges[v->heading] = LINE;
 
   if (s->accum >= 2.0 * M_PI)
@@ -267,13 +267,13 @@ bool scan_tick(Robot *robot)
     return true;
   }
 
-  set_avelocity(&robot->dev, -SCAN_VELOCITY_RAD, -SCAN_VELOCITY_RAD);
+  set_avelocity(&robot->dev, -MT_SCAN_VELOCITY_RAD, MT_SCAN_VELOCITY_RAD);
   return false;
 }
 
 void scan_reset(RobotScan *scan)
 {
-  for (int dir = 0; dir < DIR_COUNT; dir++) scan->edges[dir] = UNKNOWN;
+  for (int dir = 0; dir < MAP_DIR_COUNT; dir++) scan->edges[dir] = UNKNOWN;
   scan->accum = 0;
   scan->primed = false;
   scan->done = false;
@@ -285,12 +285,12 @@ void commit_cell(Robot *robot)
   RobotScan *s = &robot->nav.scanFlags;
   Coord here = robot->now.coord;
 
-  for (int dir = 0; dir < DIR_COUNT; dir++)
+  for (int dir = 0; dir < MAP_DIR_COUNT; dir++)
     if (s->edges[dir] == UNKNOWN) s->edges[dir] = NO_LINE;
 
   cell_record(here, s->edges);
 
-  for (int dir = 0; dir < DIR_COUNT; dir++)
+  for (int dir = 0; dir < MAP_DIR_COUNT; dir++)
   {
     if (s->edges[dir] != LINE) continue;
 
@@ -370,6 +370,12 @@ void camera_init(RobotDevices *dev, CameraImage *img)
   img->px = malloc((size_t)img->w * img->h * sizeof *img->px);
 }
 
+void camera_free(CameraImage *img)
+{
+  free(img->px);
+  img->px = NULL;
+}
+
 bool get_image(RobotDevices *dev, CameraImage *img)
 {
   const unsigned char *raw = wb_camera_get_image(dev->camera);
@@ -379,10 +385,47 @@ bool get_image(RobotDevices *dev, CameraImage *img)
   return true;
 }
 
-void camera_free(CameraImage *img)
+bool camera_sides(CameraImage *img, bool *cl, bool *cr)
 {
-  free(img->px);
-  img->px = NULL;
+  *cl = false;
+  *cr = false;
+
+  int camx = img->w / 2;
+
+  for (int y = img->h - CM_NEAR_BAND; y < img->h; y++)
+  {
+    if (!px_dark(img, camx, y)) continue;
+
+    int run = 0;
+    for (int x = camx - 1; x >= 0 && px_dark(img, x, y); x--) run++;
+    if (run >= CM_SIDE_MIN_PX) *cl = true;
+
+    run = 0;
+    for (int x = camx + 1; x < img->w && px_dark(img, x, y); x--) run++;
+    if (run >= CM_SIDE_MIN_PX) *cr = true;
+  }
+
+  return *cl || *cr;
+}
+
+bool camera_ahead(CameraImage *img)
+{
+  int camx = img->w / 2;
+  int rows = 0;
+
+  for (int y = img->h / 4; y < img->h / 2; y++)
+  {
+    bool dark = false;
+    for (int x = camx - 2; x <= camx + 2; x++)
+      if (px_dark(img, x, y))
+      {
+        dark = true;
+        break;
+      }
+    if (dark) rows++;
+  }
+
+  return rows >= CM_AHEAD_ROWS;
 }
 
 /// @brief Gets robot heading in compass values (N,S,E,W)
@@ -481,8 +524,8 @@ void set_avelocity(RobotDevices *dev, double lv, double rv)
 
 void set_motor_avelocity(WbDeviceTag mt, double mv)
 {
-  if (mv > MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
-  if (mv < -MAX_VELOCITY_RAD) mv = -MAX_VELOCITY_RAD;
+  if (mv > MT_MAX_VELOCITY_RAD) mv = MT_MAX_VELOCITY_RAD;
+  if (mv < -MT_MAX_VELOCITY_RAD) mv = -MT_MAX_VELOCITY_RAD;
 
   wb_motor_set_velocity(mt, mv);
 }
@@ -494,12 +537,18 @@ void set_motor_avelocity(WbDeviceTag mt, double mv)
 
 #pragma region HELPER METHODS
 
-Direction translate_heading(Direction headn, TurnDirection dir) { return (headn + dir) % DIR_COUNT; }
+static bool px_dark(const CameraImage *img, int x, int y)
+{
+  CameraPixel p = img->px[y * img->w + x];
+  return (p.r + p.g + p.b) / 3 < CM_DARK;
+}
+
+Direction translate_heading(Direction headn, TurnDirection dir) { return (headn + dir) % MAP_DIR_COUNT; }
 
 double angle_diff(double a, double b) { return atan2(sin(a - b), cos(a - b)); }
 bool spin_tick(Robot *robot) { return align_tick(robot, 0.0); }
-bool turn_tick(Robot *robot) { return align_tick(robot, TURN_VELOCITY_RAD); }
-bool drive_tick(Robot *robot) { return align_tick(robot, CRUISE_VELOCITY_RAD); }
+bool turn_tick(Robot *robot) { return align_tick(robot, MT_TURN_VELOCITY_RAD); }
+bool drive_tick(Robot *robot) { return align_tick(robot, MT_CRUISE_VELOCITY_RAD); }
 
 /// @brief
 /// @param robot
@@ -509,21 +558,21 @@ bool align_tick(Robot *robot, double wfv)
 {
   double err = angle_diff(robot->nav.target_heading, robot->now.heading_rad);
 
-  if (fabs(err) < HEADING_TOL)
+  if (fabs(err) < CP_HEADING_TOL)
   {
     set_avelocity(&robot->dev, wfv, wfv);
     return true;
   }
 
   // get and clamp the robot's Wheel Steering Velocity (rad/s)
-  double wsv = KP_TURN * err;
-  if (wsv > CRUISE_VELOCITY_RAD) wsv = CRUISE_VELOCITY_RAD;
-  if (wsv < -CRUISE_VELOCITY_RAD) wsv = -CRUISE_VELOCITY_RAD;
+  double wsv = MT_KP_TURN * err;
+  if (wsv > MT_CRUISE_VELOCITY_RAD) wsv = MT_CRUISE_VELOCITY_RAD;
+  if (wsv < -MT_CRUISE_VELOCITY_RAD) wsv = -MT_CRUISE_VELOCITY_RAD;
 
   if (wfv == 0.0)
   {
-    if (wsv > 0 && wsv < MIN_TURN) wsv = MIN_TURN;
-    if (wsv < 0 && wsv > -MIN_TURN) wsv = -MIN_TURN;
+    if (wsv > 0 && wsv < MT_MIN_TURN) wsv = MT_MIN_TURN;
+    if (wsv < 0 && wsv > -MT_MIN_TURN) wsv = -MT_MIN_TURN;
   }
 
   set_avelocity(&robot->dev, wfv - wsv, wfv + wsv);
