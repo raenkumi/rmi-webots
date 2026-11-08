@@ -101,7 +101,7 @@ bool cell_visited(Coord cell);
 void cell_record(Coord cell, const Path edges[DIR_COUNT]);
 Coord cell_step(Coord cell, Direction dir);
 
-int route_create(Cell start, Cell goal, Coord *out);
+int route_create(Coord start, Coord goal, Coord *out);
 void route_print();
 
 #pragma endregion

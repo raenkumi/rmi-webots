@@ -15,6 +15,9 @@
 
 #pragma region ROBOT DEFINITIONS
 
+// compass
+#define HEADING_TOL 0.05 // radians
+
 // ground Sensors
 #define GROUND_SENSORS_COUNT 3
 #define WHITE_THRESHOLD 500
@@ -22,7 +25,10 @@
 // motors
 #define WHEEL_RADIUS_CM 3.0 // unknown
 #define CRUISE_VELOCITY_RAD 5.0
+#define TURN_VELOCITY_RAD -2.0
 #define MAX_VELOCITY_RAD 6.28
+#define KP_TURN 4.0  // P gain: err rad -> whell rad/s
+#define MIN_TURN 0.4 // window so P don't slow when close to target
 
 // camera
 typedef struct
@@ -74,8 +80,8 @@ typedef enum
 {
   TURN_AHEAD = 0,
   TURN_RIGHT,
+  TURN_BACK,
   TURN_LEFT,
-  TURN_BACK
 } TurnDirection;
 
 typedef enum
@@ -126,7 +132,7 @@ typedef struct
 typedef struct
 {
   ExplorationState state;
-  Coord explStack[MAX_CELLS];
+  Coord explStack[MAX_CELLS * 4];
   int top;
 } RobotExploration;
 
@@ -212,10 +218,21 @@ const double *get_gsvalues(RobotDevices *dev);
 
 #pragma region ROBOT SENSING METHODS
 
-void set_avelocity(RobotDevices *dev, double v);
+void set_avelocity(RobotDevices *dev, double lv, double rv);
 void set_motor_avelocity(WbDeviceTag mt, double mv);
 
-double calculate_heading_rad(RobotDevices *dev, TurnDirection dir);
+#pragma endregion
+
+// HELPER METHODS
+// ==========================================
+
+#pragma region HELPER METHODS
+
+double angle_diff(double a, double b);
+bool align_tick(Robot *robot, double base);
+bool spin_tick(Robot *robot);
+bool turn_tick(Robot *robot);
+bool drive_tick(Robot *robot);
 
 #pragma endregion
 

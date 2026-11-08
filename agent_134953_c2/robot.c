@@ -13,7 +13,9 @@
 #include "map.h"
 #include "robot.h"
 
+#ifndef M_PI
 #define M_PI 3.14159265358979323846 /* pi */
+#endif
 
 // ROBOT METHODS
 // ==========================================
@@ -26,14 +28,14 @@ void robot_init(Robot *robot)
   wb_robot_init(); // wb lib init
 
   d->timestep = (int)wb_robot_get_basic_time_step();
-  d->left_motor = wb_robot_get_device("left wheel motor");
-  d->right_motor = wb_robot_get_device("right wheel motor");
   d->gps = wb_robot_get_device("gps");
   d->camera = wb_robot_get_device("camera");
   d->compass = wb_robot_get_device("compass");
   d->gs0 = wb_robot_get_device("gs0");
   d->gs1 = wb_robot_get_device("gs1");
   d->gs2 = wb_robot_get_device("gs2");
+  d->left_motor = wb_robot_get_device("left wheel motor");
+  d->right_motor = wb_robot_get_device("right wheel motor");
 
   wb_gps_enable(d->gps, d->timestep);
   wb_camera_enable(d->camera, d->timestep);
@@ -45,7 +47,7 @@ void robot_init(Robot *robot)
   camera_init(&robot->dev, &robot->now.img);
   wb_motor_set_position(d->left_motor, INFINITY);
   wb_motor_set_position(d->right_motor, INFINITY);
-  set_avelocity(d, 0);
+  set_avelocity(d, 0, 0);
 
   wb_robot_step(d->timestep);
 
@@ -83,7 +85,7 @@ void robot_sense(Robot *robot)
   v->rmv = get_motor_avelocity(&robot->dev.right_motor);
 
   printf(
-      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %c; hdr %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
+      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %d; hdr %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
       v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->heading_rad, v->gs0_v, v->gs1_v, v->gs2_v);
 
   get_image(&robot->dev, &v->img);
@@ -136,9 +138,9 @@ void robot_navigate(Robot *robot)
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    f->ahead |= (v->gs0_v < WHITE_THRESHOLD) || cl;
+    f->left |= (v->gs0_v < WHITE_THRESHOLD) || cl;
     f->ahead |= (v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img);
-    f->ahead |= (v->gs2_v < WHITE_THRESHOLD) || cr;
+    f->right |= (v->gs2_v < WHITE_THRESHOLD) || cr;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
     if (!cell_center(v->rcoord, n->target_cell))
@@ -391,17 +393,17 @@ double get_lvelocity(RobotDevices *dev)
 
 #pragma region ACTUATION METHODS
 
-void set_avelocity(RobotDevices *dev, double mv)
+void set_avelocity(RobotDevices *dev, double lv, double rv)
 {
-  if (mv >= MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
-
-  set_motor_avelocity(dev->left_motor, mv);
-  set_motor_avelocity(dev->right_motor, mv);
+  set_motor_avelocity(dev->left_motor, lv);
+  set_motor_avelocity(dev->right_motor, rv);
 }
 
 void set_motor_avelocity(WbDeviceTag mt, double mv)
 {
-  if (mv >= MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
+  if (mv > MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
+  if (mv < -MAX_VELOCITY_RAD) mv = -MAX_VELOCITY_RAD;
+
   wb_motor_set_velocity(mt, mv);
 }
 
@@ -412,6 +414,38 @@ void set_motor_avelocity(WbDeviceTag mt, double mv)
 
 #pragma region HELPER METHODS
 
-double calculate_heading_rad(RobotDevices *dev, TurnDirection dir) { return 0.0; }
+double angle_diff(double a, double b) { return atan2(sin(a - b), cos(a - b)); }
+bool spin_tick(Robot *robot) { return align_tick(robot, 0.0); }
+bool turn_tick(Robot *robot) { return align_tick(robot, TURN_VELOCITY_RAD); }
+bool drive_tick(Robot *robot) { return align_tick(robot, CRUISE_VELOCITY_RAD); }
+
+/// @brief
+/// @param robot
+/// @param wfv Wheel Forward Velocity (rad/s), how much the robot's wheel advances in relation to its Angular Velocity
+/// @return
+bool align_tick(Robot *robot, double wfv)
+{
+  double err = angle_diff(robot->nav.target_heading, robot->now.heading_rad);
+
+  if (fabs(err) < HEADING_TOL)
+  {
+    set_avelocity(&robot->dev, wfv, wfv);
+    return true;
+  }
+
+  // get and clamp the robot's Wheel Steering Velocity (rad/s)
+  double wsv = KP_TURN + err;
+  if (wsv > CRUISE_VELOCITY_RAD) wsv = CRUISE_VELOCITY_RAD;
+  if (wsv < -CRUISE_VELOCITY_RAD) wsv = -CRUISE_VELOCITY_RAD;
+
+  if (wfv == 0.0)
+  {
+    if (wsv > 0 && wsv < MIN_TURN) wsv = MIN_TURN;
+    if (wsv < 0 && wsv > -MIN_TURN) wsv = -MIN_TURN;
+  }
+
+  set_avelocity(&robot->dev, wfv - wsv, wfv + wsv);
+  return false;
+}
 
 #pragma endregion
