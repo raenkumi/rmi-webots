@@ -87,6 +87,7 @@ void map_init(Map *map);
 void map_mark(Map *map, Coord c, Direction d, Path p);
 void map_save(const char *filename);
 void map_print();
+// CELL FUNCTIONS
 
 Coord cell_normalize(RCoord rcoords);
 bool cell_equal(Coord a, Coord b);

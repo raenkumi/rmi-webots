@@ -182,7 +182,9 @@ void robot_actuate(Robot *robot);
 #pragma region ROBOT PRIVATE METHODS
 
 bool next_target(Robot *robot, Coord *out);
+bool scan_tick(Robot *robot);
 void scan_reset(RobotScan *scan);
+void commit_cell(Robot *robot);
 void rotate_north(Path *rel, Path *result, Direction *dir);
 
 #pragma endregion

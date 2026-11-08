@@ -125,72 +125,47 @@ void robot_navigate(Robot *robot)
   // define checks for RobotNavigation, try altering states by what happened over senses
   RobotNavigation *n = &robot->nav;
   RobotValues *v = &robot->now;
-  RobotScan *scan = &n->scanFlags;
+  RobotScan *s = &n->scanFlags;
 
   switch (n->state)
   {
   case NAV_SETUP: // 360 spin to map origin, then start exploring
-
-    if (!scan->done) break;
-    if (!scan->spin)
+    if (!s->done) break;
+    if (!s->spin)
     {
-      for (int dir = 0; dir < DIR_COUNT; dir++)
-        if (scan->edges[dir] == UNKNOWN) scan->edges[dir] = NO_LINE;
-
-      cell_record(v->coord, scan->edges);
-
-      for (int dir = 0; dir < DIR_COUNT; dir++)
-      {
-        Coord neighb = cell_step(v->coord, dir);
-        if (scan->edges[dir] == LINE && !cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
-      }
-
-      scan->spin = true;
-      n->target_heading = round(v->heading_rad / (M_PI / 2) * (M_PI / 2));
+      commit_cell(robot);
+      s->spin = true;
+      n->target_heading = round(v->heading_rad / (M_PI / 2)) * (M_PI / 2);
     }
 
     if (fabs(angle_diff(n->target_heading, v->heading_rad)) < HEADING_TOL)
     {
-      scan_reset(scan);
+      scan_reset(s);
       n->state = NAV_MAP;
     }
-
     break;
 
-  case NAV_MAP: // map current cell paths
+  case NAV_MAP: // senses cell while driving
     // 1. LATCH, gs are primary factual and camera is residual temporal redundancy
     Direction headn = v->heading;
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    if ((v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img)) scan->edges[headn] = LINE;
-    if ((v->gs0_v < WHITE_THRESHOLD) || cl) scan->edges[translate_heading(headn, TURN_LEFT)] = LINE;
-    if ((v->gs2_v < WHITE_THRESHOLD) || cr) scan->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
+    if ((v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img)) s->edges[headn] = LINE;
+    if ((v->gs0_v < WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
+    if ((v->gs2_v < WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
     if (!cell_center(v->rcoord, n->target_cell)) break;
 
     // 3. CONSOLIDATE at cell center, translate to north
-    scan->edges[translate_heading(headn, TURN_BACK)] = LINE;
+    s->edges[translate_heading(headn, TURN_BACK)] = LINE;
+    commit_cell(robot);
 
-    for (int dir = 0; dir < DIR_COUNT; dir++)
-      if (scan->edges[dir] == UNKNOWN) scan->edges[dir] = NO_LINE;
-
-    // 4. RECORD cell to map
-    cell_record(v->coord, scan->edges);
-
-    // 5. PUSH unvisited PATH neighbors to exploration stack
-    for (int dir = 0; dir < DIR_COUNT; dir++)
-    {
-      if (scan->edges[dir] != LINE) continue;
-      Coord neighb = cell_step(v->coord, dir);
-      if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
-    }
-
-    // 6. CONTINUE straigh ahead if possible, else turn
+    // 4. CONTINUE straigh ahead if possible, else turn
     Coord fwd = cell_step(v->coord, headn);
-    bool go_ahead = (scan->edges[headn] == LINE) && !cell_visited(fwd);
-    scan_reset(scan);
+    bool go_ahead = (s->edges[headn] == LINE) && !cell_visited(fwd);
+    scan_reset(s);
 
     if (go_ahead)
     { // Overrides DFS stack by picking next cell as straight ahead
@@ -201,10 +176,9 @@ void robot_navigate(Robot *robot)
       n->state = NAV_NAVIGATE;
     }
     else
-    { // Route topmost DFS stack cell
+    {
       n->state = NAV_ROUTE;
     }
-
     break;
 
   case NAV_ROUTE: // select next cell to map and calculate route there
@@ -220,25 +194,18 @@ void robot_actuate(Robot *robot)
   switch (robot->nav.state)
   {
   case NAV_SETUP:
-    spin_tick(robot);
+    if (!robot->nav.scanFlags.done) robot->nav.scanFlags.done = scan_tick(robot);
+    else spin_tick(robot);
     break;
 
   case NAV_NAVIGATE:
-    // todo: implement
+    // todo: drive_tick / turn dispatch
     break;
 
   default:
     set_avelocity(&robot->dev, 0, 0);
     break;
   }
-}
-
-void scan_reset(RobotScan *scan)
-{
-  for (int dir = 0; dir < DIR_COUNT; dir++) scan->edges[dir] = NO_LINE;
-  scan->accum = 0;
-  scan->primed = false;
-  scan->done = false;
 }
 
 #pragma endregion
@@ -275,6 +242,62 @@ void scan_reset(RobotScan *scan)
 //
 //   return 1;
 // }
+
+bool scan_tick(Robot *robot)
+{
+  RobotScan *s = &robot->nav.scanFlags;
+  RobotValues *v = &robot->now;
+
+  if (!s->primed)
+  {
+    scan_reset(s);
+    s->prev_rad = v->heading_rad;
+    s->primed = true;
+  }
+
+  s->accum += fabs(angle_diff(v->heading_rad, s->prev_rad));
+  s->prev_rad = v->heading_rad;
+
+  if (v->gs0_v < WHITE_THRESHOLD || v->gs1_v < WHITE_THRESHOLD || v->gs2_v < WHITE_THRESHOLD)
+    s->edges[v->heading] = LINE;
+
+  if (s->accum >= 2.0 * M_PI)
+  {
+    set_avelocity(&robot->dev, 0, 0);
+    return true;
+  }
+
+  set_avelocity(&robot->dev, -SCAN_VELOCITY_RAD, -SCAN_VELOCITY_RAD);
+  return false;
+}
+
+void scan_reset(RobotScan *scan)
+{
+  for (int dir = 0; dir < DIR_COUNT; dir++) scan->edges[dir] = UNKNOWN;
+  scan->accum = 0;
+  scan->primed = false;
+  scan->done = false;
+  scan->spin = false;
+}
+
+void commit_cell(Robot *robot)
+{
+  RobotScan *s = &robot->nav.scanFlags;
+  Coord here = robot->now.coord;
+
+  for (int dir = 0; dir < DIR_COUNT; dir++)
+    if (s->edges[dir] == UNKNOWN) s->edges[dir] = NO_LINE;
+
+  cell_record(here, s->edges);
+
+  for (int dir = 0; dir < DIR_COUNT; dir++)
+  {
+    if (s->edges[dir] != LINE) continue;
+
+    Coord neighb = cell_step(here, dir);
+    if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
+  }
+}
 
 bool next_target(Robot *robot, Coord *out)
 {
