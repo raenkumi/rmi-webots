@@ -10,46 +10,30 @@
 
 #include "map.h"
 
-// WORLD DEFINITIONS
-// ==========================================
-
-#define TIME_STEP_MS 16
-#define DURATION_MS 350000
-
 // ROBOT DEFINITIONS
 // ==========================================
 
+#pragma region ROBOT DEFINITIONS
+
+// Ground Sensors
 #define GROUND_SENSORS_COUNT 3
 #define WHITE_THRESHOLD 500
+
+// Motors
 #define WHEEL_RADIUS_CM 3.0
 #define CRUISE_VELOCITY_RAD 3.0
 #define MAX_VELOCITY_RAD 6.28
 
 typedef struct
 {
-  int timestep;
-  WbDeviceTag left_motor;
-  WbDeviceTag right_motor;
-  WbDeviceTag gps;
-  WbDeviceTag camera;
-  WbDeviceTag compass;
-  WbDeviceTag gs0;
-  WbDeviceTag gs1;
-  WbDeviceTag gs2;
-} RobotDevices;
+  unsigned char b, g, r, a;
+} CameraPixel;
 
 typedef struct
 {
-  double lmv;               // radians/s
-  double rmv;               // radians/s
-  Coord coord;              // x, y
-  Coord rcoord;             // x, y (raw)
-  const unsigned char *img; // todo: camera data structure
-  double heading;
-  double gs0_v;
-  double gs1_v;
-  double gs2_v;
-} RobotValues;
+  int w, h;
+  CameraPixel *px;
+} CameraImage;
 
 typedef enum
 {
@@ -92,19 +76,73 @@ typedef enum
 
 typedef struct
 {
+  int timestep;
+  WbDeviceTag gps;
+  WbDeviceTag camera;
+  WbDeviceTag compass;
+  WbDeviceTag gs0;
+  WbDeviceTag gs1;
+  WbDeviceTag gs2;
+  WbDeviceTag left_motor;
+  WbDeviceTag right_motor;
+} RobotDevices;
+
+typedef struct
+{
+  Coord origin;    // x, y (raw, normalized to 0.0)
+  Coord rcoord;    // x, y (raw)
+  Coord coord;     // x, y
+  CameraImage img; // todo: camera data structure
+  double heading;
+  double gs0_v;
+  double gs1_v;
+  double gs2_v;
+  double speed; // linear velocity m/s
+  double lmv;   // radians/s
+  double rmv;   // radians/s
+} RobotValues;
+
+typedef struct
+{
+  NavigationState state;
+  Coord goal;
+  Coord target_cell;
+  double target_heading;
+  Coord path[MAX_CELLS];
+  int path_len, path_iter;
+} RobotNavigation;
+
+typedef struct
+{
+  ExplorationState state;
+  Coord explStack[MAX_CELLS];
+  int top;
+} RobotExploration;
+
+typedef struct
+{
   RobotDevices dev;
   RobotValues now;
-  NavigationState state;
+  RobotNavigation nav;
+  RobotExploration exp;
 } Robot;
 
-// ROBOT FUNCTIONS
+#pragma endregion
+
+// ROBOT METHODS
 // ==========================================
+
+#pragma region ROBOT METHODS
 
 /// @brief Creates Robot instance to be used
 void robot_init(Robot *robot);
+int robot_kill();
 
 /// @brief Reads all sensors of robot
-RobotValues robot_sense(Robot *robot);
+void robot_sense(Robot *robot);
+
+/// @brief Process all sensor readings of the robot
+// void robot_process(Robot *robot);
 
 /// @brief DFS of the current map
 void robot_explore(Robot *robot);
@@ -115,21 +153,31 @@ void robot_navigate(Robot *robot);
 /// @brief Controls actuation of motors
 void robot_actuate(Robot *robot);
 
-double get_avelocity(RobotDevices *r);
-double get_motor_avelocity(WbDeviceTag *m);
-double get_pvelocity(RobotDevices *r);
-Coord get_raw_coord(RobotDevices *r);
-double get_raw_x(RobotDevices *r);
-double get_raw_y(RobotDevices *r);
-Coord get_coord(RobotDevices *r);
-double get_x(RobotDevices *r);
-double get_y(RobotDevices *r);
-const unsigned char *get_image(RobotDevices *r);
-double get_heading(RobotDevices *r);
-double get_gsvalue(WbDeviceTag *g);
-const double *get_gsvalues(RobotDevices *r);
+double get_avelocity(RobotDevices *dev);
+double get_motor_avelocity(WbDeviceTag *mt);
+double get_lvelocity(RobotDevices *dev);
 
-void set_avelocity(RobotDevices *r, double v);
-void set_motor_velocity(WbDeviceTag m, double v);
+Coord get_raw_coord(RobotDevices *dev);
+double get_raw_x(RobotDevices *dev);
+double get_raw_y(RobotDevices *dev);
+Coord get_coord(RobotDevices *dev);
+double get_x(RobotDevices *dev);
+double get_y(RobotDevices *dev);
+
+void camera_init(RobotDevices *dev, CameraImage *img);
+bool get_image(RobotDevices *dev, CameraImage *img);
+void camera_free(CameraImage *img);
+
+double get_heading(RobotDevices *dev);
+
+double get_gsvalue(WbDeviceTag *gs);
+const double *get_gsvalues(RobotDevices *dev);
+
+void set_avelocity(RobotDevices *dev, double v);
+void set_motor_avelocity(WbDeviceTag mt, double mv);
+
+double calculate_heading_rad(RobotDevices *dev, TurnDirection dir);
+
+#pragma endregion
 
 #endif // ROBOT_H

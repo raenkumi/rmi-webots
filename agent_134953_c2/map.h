@@ -6,25 +6,23 @@
 // WORLD DEFINITIONS
 // ==========================================
 
-#define TIME_STEP_MS 16
 #define DURATION_MS 350000
 
 // MAP DEFINITIONS
 // ==========================================
 
 #define MAX_CELLS (14 * 7)
-#define CELL_ORIGIN_M 0.075
 #define CELL_DISTANCE_M 0.15
 
 typedef enum
 {
-  RED = 0,
-  GREEN,
-  YELLOW,
-  MAGENTA,
-  CYAN,
-  ORANGE,
-  WHITE
+  GOAL_RED = 0,
+  GOAL_GREEN = 1,
+  GOAL_YELLOW = 2,
+  GOAL_MAGENTA = 3,
+  GOAL_CYAN = 4,
+  GOAL_ORANGE = 5,
+  GOAL_WHITE = 6
 } Goals;
 
 typedef enum
@@ -52,14 +50,16 @@ typedef struct
   Cell cells[255];
 } Map;
 
+void world_init(Coord orgn);
+
 // MAP FUNCTIONS
 
 /// @brief Adds new cell to the map
-void add_cell();
+void add_cell(void);
 
-/// @brief Creates a route between start and goal cell using Dijkstra's
-/// @param start Starting cell, can be current one
-/// @param goal Goal cell
+/// @brief Creates a route between start and goal cell using Dijkstra's.
+/// @param start Starting cell, can be current one.
+/// @param goal Goal cell.
 void create_route(Cell start, Cell goal);
 
 Coord normalize(const double *coords);

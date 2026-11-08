@@ -9,102 +9,115 @@
 #include "map.h"
 #include "robot.h"
 
-Cell route[MAX_CELLS];
-Cell explorationStack[MAX_CELLS];
-int top = 0;
-
-// ROBOT FUNCTIONS
+// ROBOT METHODS
 // ==========================================
+
 #pragma region PUBLIC METHODS
 
 void robot_init(Robot *robot)
 {
-  RobotDevices devs;
+  RobotDevices *d = &robot->dev;
   wb_robot_init(); // wb lib init
 
-  devs.timestep = (int)wb_robot_get_basic_time_step();
-  devs.left_motor = wb_robot_get_device("left wheel motor");
-  devs.right_motor = wb_robot_get_device("right wheel motor");
-  devs.gps = wb_robot_get_device("gps");
-  devs.camera = wb_robot_get_device("camera");
-  devs.compass = wb_robot_get_device("compass");
-  devs.gs0 = wb_robot_get_device("gs0");
-  devs.gs1 = wb_robot_get_device("gs1");
-  devs.gs2 = wb_robot_get_device("gs2");
+  d->timestep = (int)wb_robot_get_basic_time_step();
+  d->left_motor = wb_robot_get_device("left wheel motor");
+  d->right_motor = wb_robot_get_device("right wheel motor");
+  d->gps = wb_robot_get_device("gps");
+  d->camera = wb_robot_get_device("camera");
+  d->compass = wb_robot_get_device("compass");
+  d->gs0 = wb_robot_get_device("gs0");
+  d->gs1 = wb_robot_get_device("gs1");
+  d->gs2 = wb_robot_get_device("gs2");
 
-  wb_gps_enable(devs.gps, TIME_STEP_MS);
-  wb_camera_enable(devs.camera, TIME_STEP_MS);
-  wb_compass_enable(devs.compass, TIME_STEP_MS);
-  wb_distance_sensor_enable(devs.gs0, TIME_STEP_MS);
-  wb_distance_sensor_enable(devs.gs1, TIME_STEP_MS);
-  wb_distance_sensor_enable(devs.gs2, TIME_STEP_MS);
+  wb_gps_enable(d->gps, d->timestep);
+  wb_camera_enable(d->camera, d->timestep);
+  wb_compass_enable(d->compass, d->timestep);
+  wb_distance_sensor_enable(d->gs0, d->timestep);
+  wb_distance_sensor_enable(d->gs1, d->timestep);
+  wb_distance_sensor_enable(d->gs2, d->timestep);
 
-  wb_motor_set_position(devs.left_motor, INFINITY);
-  wb_motor_set_position(devs.right_motor, INFINITY);
-  set_avelocity(&devs, 0);
+  camera_init(&robot->now.img, &robot->dev);
+  wb_motor_set_position(d->left_motor, INFINITY);
+  wb_motor_set_position(d->right_motor, INFINITY);
+  set_avelocity(&d, 0);
 
-  wb_robot_step(devs.timestep);
-  robot->dev = devs;
-  robot->now = robot_sense(robot);
+  wb_robot_step(d->timestep);
+
+  robot_sense(robot);
+
+  RobotExploration *e = &robot->exp;
+  e->state = EXP_SETUP;
+
+  RobotNavigation *n = &robot->nav;
+  n->state = NAV_SETUP;
 
   printf("init robot finished\n");
 }
 
-RobotValues robot_sense(Robot *robot)
+int robot_kill(void)
 {
-  RobotValues vals;
+  wb_robot_cleanup();
+  return 0;
+}
 
-  vals.lmv = get_motor_avelocity(&robot->dev.left_motor);
-  vals.rmv = get_motor_avelocity(&robot->dev.right_motor);
-  vals.coord = get_coord(&robot->dev);
-  vals.rcoord = get_raw_coord(&robot->dev);
-  vals.img = get_image(&robot->dev);
-  vals.heading = get_heading(&robot->dev);
-  vals.gs0_v = get_gsvalue(&robot->dev.gs0);
-  vals.gs1_v = get_gsvalue(&robot->dev.gs1);
-  vals.gs2_v = get_gsvalue(&robot->dev.gs2);
+void robot_sense(Robot *robot)
+{
+  RobotValues *v = &robot->now;
+
+  v->origin = get_raw_coord(&robot->dev);
+  v->rcoord = get_raw_coord(&robot->dev);
+  v->coord = get_coord(&robot->dev);
+  v->heading = get_heading(&robot->dev);
+  v->gs0_v = get_gsvalue(&robot->dev.gs0);
+  v->gs1_v = get_gsvalue(&robot->dev.gs1);
+  v->gs2_v = get_gsvalue(&robot->dev.gs2);
+  v->speed = get_lvelocity(&robot->dev);
+  v->lmv = get_motor_avelocity(&robot->dev.left_motor);
+  v->rmv = get_motor_avelocity(&robot->dev.right_motor);
 
   printf(
-      "lmv %.2f; rmv %.2f; x %.2f; y %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", vals.lmv, vals.rmv, vals.coord.x,
-      vals.coord.y, vals.heading, vals.gs0_v, vals.gs1_v, vals.gs2_v);
+      "lmv %.2f; rmv %.2f; x %.2f; y %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv, v->coord.x,
+      v->coord.y, v->heading, v->gs0_v, v->gs1_v, v->gs2_v);
 
-  return vals;
+  get_image(&robot->dev, &v->img);
 }
 
 void robot_explore(Robot *robot)
 {
-  // if (top == 0) explorationStack[top++];
+  // define checks for RobotExplore, basically continue if not DONE
 }
 
-void robot_navigate(Robot *robot) {}
+void robot_navigate(Robot *robot)
+{
+  // define checks for RobotNavigation, try altering states by what happened over senses
+}
 void robot_actuate(Robot *robot) {}
 
 #pragma endregion
 
+// PRIVATE METHODS
+// ==========================================
+
 #pragma region PRIVATE METHODS
 
-int stop(RobotDevices *robot)
+/// @brief Stops the robot, only returns when linear (GPS) velocity is 0.
+/// @param robot
+/// @return
+bool stop(RobotDevices *robot)
 {
   bool stationary = false;
   set_avelocity(robot, 0);
 
-  // check gps stationary
   while (!stationary)
   {
-    double rx = 0, ry = 0;
-    Coord coord = get_coord(robot);
-    double v = hypot(coord.x - rx, coord.y - ry) / (TIME_STEP_MS / 1000.0);
-
-    rx = coord.x;
-    ry = coord.y;
-
-    stationary = v < 1e-4;
+    double speed = get_lvelocity(robot);
+    stationary = speed < 1e-4;
   }
 
-  return 1;
+  return stationary;
 }
 
-// int turn(Robot *robot, TurnDirection dir) {}
+int turn(Robot *robot, TurnDirection dir) {}
 
 int spin(RobotDevices *robot, SpinDirection spinDir)
 {
@@ -129,31 +142,10 @@ int spin(RobotDevices *robot, SpinDirection spinDir)
 
 #pragma endregion
 
+// SENSING METHODS
+// ==========================================
+
 #pragma region SENSING METHODS
-
-/// @brief Calculates robot wheel angular velocity (NOT ACTUAL VELOCITY)
-/// @param r
-/// @return
-double get_avelocity(RobotDevices *dev)
-{
-  double lv = wb_motor_get_velocity(dev->left_motor);
-  double rv = wb_motor_get_velocity(dev->right_motor);
-
-  return (lv + rv) / 2;
-}
-
-double get_motor_avelocity(WbDeviceTag *mt) { return wb_motor_get_velocity(*mt); }
-
-/// @brief Calculates robot coordinate angular velocity (NOT ACTUAL VELOCITY)
-/// @param r
-/// @return
-double get_pvelocity(RobotDevices *dev)
-{
-  double lv = wb_motor_get_velocity(dev->left_motor);
-  double rv = wb_motor_get_velocity(dev->right_motor);
-
-  return lv + rv / 2;
-}
 
 Coord get_raw_coord(RobotDevices *dev)
 {
@@ -196,7 +188,27 @@ double get_y(RobotDevices *dev)
   return coord.y;
 }
 
-const unsigned char *get_image(RobotDevices *dev) { return wb_camera_get_image(dev->camera); }
+void camera_init(RobotDevices *dev, CameraImage *img)
+{
+  img->w = wb_camera_get_width(dev->camera);
+  img->h = wb_camera_get_height(dev->camera);
+  img->px = malloc((size_t)img->w * img->h * sizeof *img->px);
+}
+
+bool get_image(RobotDevices *dev, CameraImage *img)
+{
+  const unsigned char *raw = wb_camera_get_image(dev->camera);
+  if (raw == NULL) return false;
+
+  memcpy(img->px, raw, (size_t)img->w * img->h * sizeof *img->px);
+  return true;
+}
+
+void camera_free(CameraImage *img)
+{
+  free(img->px);
+  img->px = NULL;
+}
 
 /// @brief Gets robot heading in radians (-pi/pi]
 double get_heading(RobotDevices *dev)
@@ -218,22 +230,76 @@ const double *get_gsvalues(RobotDevices *dev)
   return g;
 }
 
+/// @brief Calculates robot wheel angular velocity.
+/// THIS IS NOT ACTUAL VELOCITY and may 0 even when robot is moving.
+/// @param dev
+/// @return
+double get_avelocity(RobotDevices *dev)
+{
+  double lv = wb_motor_get_velocity(dev->left_motor);
+  double rv = wb_motor_get_velocity(dev->right_motor);
+
+  return (lv + rv) / 2;
+}
+
+double get_motor_avelocity(WbDeviceTag *mt) { return wb_motor_get_velocity(*mt); }
+
+/// @brief Estimates robot linear velocity in m/s (GPS finite difference) coordinates.
+/// @param dev
+/// @return m/s
+double get_lvelocity(RobotDevices *dev)
+{
+  static Coord prevc;
+  static double prevt;
+  static bool primed = false;
+
+  Coord coord = get_raw_coord(dev);
+  double inst = wb_robot_get_time();
+
+  if (!primed)
+  {
+    prevc = coord;
+    prevt = inst;
+    primed = true;
+    return 0.0;
+  }
+
+  double dt = inst - prevt;
+  double v = (dt > 0) ? hypot(coord.x - prevc.x, coord.y - prevc.y) / (dev->timestep / 1000.0) : 0.0;
+
+  prevc = coord;
+  prevt = inst;
+  return v;
+}
+
 #pragma endregion
+
+// ACTUATION METHODS
+// ==========================================
 
 #pragma region ACTUATION METHODS
 
-void set_avelocity(RobotDevices *dev, double v)
+void set_avelocity(RobotDevices *dev, double mv)
 {
-  if (v >= MAX_VELOCITY_RAD) v = MAX_VELOCITY_RAD;
+  if (mv >= MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
 
-  set_motor_velocity(dev->left_motor, v);
-  set_motor_velocity(dev->right_motor, v);
+  set_motor_avelocity(dev->left_motor, mv);
+  set_motor_avelocity(dev->right_motor, mv);
 }
 
-void set_motor_velocity(WbDeviceTag m, double v)
+void set_motor_avelocity(WbDeviceTag mt, double mv)
 {
-  if (v >= MAX_VELOCITY_RAD) v = MAX_VELOCITY_RAD;
-  wb_motor_set_velocity(m, v);
+  if (mv >= MAX_VELOCITY_RAD) mv = MAX_VELOCITY_RAD;
+  wb_motor_set_velocity(mt, mv);
 }
+
+#pragma endregion
+
+// HELPER METHODS
+// ==========================================
+
+#pragma region HELPER METHODS
+
+double calculate_heading_rad(RobotDevices *dev, TurnDirection dir) { return 0.0; }
 
 #pragma endregion

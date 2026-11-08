@@ -15,6 +15,7 @@ int main(int argc, char **argv)
 
   Robot robot;
   robot_init(&robot);
+  world_init(robot.now.rcoord);
 
   // tick loop
   while (wb_robot_step(robot.dev.timestep) != -1)
@@ -30,6 +31,5 @@ int main(int argc, char **argv)
     robot_actuate(&robot);
   }
 
-  wb_robot_cleanup();
-  return 0;
+  return robot_kill();
 }
