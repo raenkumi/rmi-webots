@@ -71,7 +71,7 @@ RobotValues robot_sense(Robot *robot)
 
 void robot_explore(Robot *robot)
 {
-  if (top == 0) explorationStack[top++];
+  // if (top == 0) explorationStack[top++];
 }
 
 void robot_navigate(Robot *robot) {}
@@ -193,7 +193,7 @@ double get_y(RobotDevices *dev)
   return coord.y;
 }
 
-unsigned char *get_image(RobotDevices *dev) { return wb_camera_get_image(dev->camera); }
+const unsigned char *get_image(RobotDevices *dev) { return wb_camera_get_image(dev->camera); }
 
 /// @brief Gets robot heading in radians (-pi/pi]
 double get_heading(RobotDevices *dev)

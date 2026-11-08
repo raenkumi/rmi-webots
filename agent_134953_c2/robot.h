@@ -36,11 +36,11 @@ typedef struct
 
 typedef struct
 {
-  double lmv;   // radians/s
-  double rmv;   // radians/s
-  Coord coord;  // x, y
-  Coord rcoord; // x, y (raw)
-  char *img;    // todo: camera data structure
+  double lmv;               // radians/s
+  double rmv;               // radians/s
+  Coord coord;              // x, y
+  Coord rcoord;             // x, y (raw)
+  const unsigned char *img; // todo: camera data structure
   double heading;
   double gs0_v;
   double gs1_v;
@@ -120,7 +120,7 @@ double get_raw_y(RobotDevices *r);
 Coord get_coord(RobotDevices *r);
 double get_x(RobotDevices *r);
 double get_y(RobotDevices *r);
-unsigned char *get_image(RobotDevices *r);
+const unsigned char *get_image(RobotDevices *r);
 double get_heading(RobotDevices *r);
 double get_gsvalue(WbDeviceTag *g);
 const double *get_gsvalues(RobotDevices *r);

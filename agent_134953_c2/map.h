@@ -8,8 +8,8 @@
 // ==========================================
 
 #define MAX_CELLS (14 * 7)
-#define CELL_ORIGIN_CM 7.5
-#define CELL_DISTANCE_CM 15
+#define CELL_ORIGIN_M 0.075
+#define CELL_DISTANCE_M 0.15
 
 typedef enum
 {
