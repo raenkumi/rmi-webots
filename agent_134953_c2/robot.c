@@ -653,7 +653,7 @@ bool align_tick(Robot *robot, double wfv)
     RobotValues *v = &robot->now;
     bool l_on = v->gs0_v < GS_WHITE_THRESHOLD;
     bool r_on = v->gs2_v < GS_WHITE_THRESHOLD;
-    if (l_on != r_on) wsv += MT_KP_LINE * (v->gs0_v - v->gs2_v);
+    if (l_on != r_on) wsv += MT_KP_LINE * (v->gs2_v - v->gs0_v);
   }
 
   if (wsv > MT_CRUISE_VELOCITY_RAD) wsv = MT_CRUISE_VELOCITY_RAD;
