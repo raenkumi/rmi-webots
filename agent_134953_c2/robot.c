@@ -259,9 +259,6 @@ bool scan_tick(Robot *robot)
   RobotScan *s = &robot->nav.scanFlags;
   RobotValues *v = &robot->now;
 
-  printf(
-      "[scan] latch dir=%d hdr=%.2f g= (%.0f, %.0f, %.0f)\n", v->heading, v->heading_rad, v->gs0_v, v->gs1_v, v->gs2_v);
-
   if (!s->primed)
   {
     scan_reset(s);
@@ -318,11 +315,11 @@ void commit_cell(Robot *robot)
 
     Coord neighb = cell_step(here, dir);
     if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
-
-    printf(
-        "[commit] (%d,%d) NESW=%d%d%d%d top=%d\n", here.x, here.y, s->edges[0], s->edges[1], s->edges[2], s->edges[3],
-        robot->exp.top);
   }
+
+  printf(
+      "[commit] (%d,%d) NESW=%d%d%d%d top=%d\n", here.x, here.y, s->edges[0], s->edges[1], s->edges[2], s->edges[3],
+      robot->exp.top);
 }
 
 bool next_target(Robot *robot, Coord *out)
