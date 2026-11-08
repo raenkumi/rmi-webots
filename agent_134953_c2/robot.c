@@ -251,7 +251,10 @@ void robot_actuate(Robot *robot)
     break;
 
   case NAV_NAVIGATE:
-    // todo: drive_tick / turn dispatch
+  case NAV_MAP:
+    double err = angle_diff(robot->nav.target_heading, robot->now.heading_rad);
+    if (fabs(err) > MT_SPIN_ENTER) spin_tick(robot);
+    else drive_tick(robot);
     break;
 
   default:
