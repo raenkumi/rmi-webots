@@ -15,15 +15,16 @@
 
 #pragma region ROBOT DEFINITIONS
 
-// Ground Sensors
+// ground Sensors
 #define GROUND_SENSORS_COUNT 3
 #define WHITE_THRESHOLD 500
 
-// Motors
-#define WHEEL_RADIUS_CM 3.0
-#define CRUISE_VELOCITY_RAD 3.0
+// motors
+#define WHEEL_RADIUS_CM 3.0 // unknown
+#define CRUISE_VELOCITY_RAD 5.0
 #define MAX_VELOCITY_RAD 6.28
 
+// camera
 typedef struct
 {
   unsigned char b, g, r, a;
@@ -35,6 +36,7 @@ typedef struct
   CameraPixel *px;
 } CameraImage;
 
+// exploration
 typedef enum
 {
   EXP_SETUP = 0, // Startup spin
@@ -42,14 +44,23 @@ typedef enum
   EXP_DONE       // No more nodes to map
 } ExplorationState;
 
+// navigation
 typedef enum
 {
   NAV_SETUP = 0, // Startup spin
   NAV_MAP,       // At target cell
-  NAV_PATHFIND,  // Select next cell to map
+  NAV_ROUTE,     // Select next cell to map and get a route there
   NAV_NAVIGATE,  // Move to next cell
 } NavigationState;
 
+typedef struct
+{
+  bool ahead;
+  bool left;
+  bool right;
+} RobotFlags;
+
+// actuation
 typedef enum
 {
   RBT_IDLE = 0,     // gps velocity at zero
@@ -61,11 +72,10 @@ typedef enum
 
 typedef enum
 {
-  NEXT_NODE,
-  STRAIGHT,
-  RIGHT,
-  LEFT,
-  BACK
+  TURN_AHEAD = 0,
+  TURN_RIGHT,
+  TURN_LEFT,
+  TURN_BACK
 } TurnDirection;
 
 typedef enum
@@ -89,16 +99,17 @@ typedef struct
 
 typedef struct
 {
-  RCoord rcoord;   // x, y (raw)
-  Coord coord;     // x, y
-  CameraImage img; // todo: camera data structure
-  double heading;
-  double gs0_v;
-  double gs1_v;
-  double gs2_v;
-  double speed; // linear velocity m/s
-  double lmv;   // radians/s
-  double rmv;   // radians/s
+  RCoord rcoord;      // x, y (raw)
+  Coord coord;        // x, y (normalized)
+  CameraImage img;    // camera image
+  Direction heading;  // compass values (N,S,E,W)
+  double heading_rad; // radians (-pi/pi]
+  double gs0_v;       // 0..999
+  double gs1_v;       // 0..999
+  double gs2_v;       // 0..999
+  double speed;       // linear velocity m/s
+  double lmv;         // radians/s
+  double rmv;         // radians/s
 } RobotValues;
 
 typedef struct
@@ -109,6 +120,7 @@ typedef struct
   double target_heading;
   Coord path[MAX_CELLS];
   int path_len, path_iter;
+  RobotFlags mapFlags;
 } RobotNavigation;
 
 typedef struct
@@ -131,7 +143,7 @@ typedef struct
 // ROBOT METHODS
 // ==========================================
 
-#pragma region ROBOT METHODS
+#pragma region ROBOT PUBLIC METHODS
 
 /// @brief Creates Robot instance to be used
 void robot_init(Robot *robot);
@@ -152,6 +164,24 @@ void robot_navigate(Robot *robot);
 /// @brief Controls actuation of motors
 void robot_actuate(Robot *robot);
 
+#pragma endregion
+
+// ROBOT PRIVATE METHODS
+// ==========================================
+
+#pragma region ROBOT PRIVATE METHODS
+
+bool next_target(Robot *robot, Coord *out);
+void clear_flags(RobotFlags *flags);
+void rotate_north(Path *rel, Path *result, Direction *dir);
+
+#pragma endregion
+
+// ROBOT SENSING METHODS
+// ==========================================
+
+#pragma region ROBOT SENSING METHODS
+
 double get_avelocity(RobotDevices *dev);
 double get_motor_avelocity(WbDeviceTag *mt);
 double get_lvelocity(RobotDevices *dev);
@@ -164,13 +194,23 @@ double get_x(RobotDevices *dev);
 double get_y(RobotDevices *dev);
 
 void camera_init(RobotDevices *dev, CameraImage *img);
-bool get_image(RobotDevices *dev, CameraImage *img);
 void camera_free(CameraImage *img);
+bool get_image(RobotDevices *dev, CameraImage *img);
+bool camera_sides(CameraImage *img, bool *cl, bool *cr);
+bool camera_ahead(CameraImage *img);
 
-double get_heading(RobotDevices *dev);
+Direction get_heading(RobotDevices *dev);
+double get_heading_rad(RobotDevices *dev);
 
 double get_gsvalue(WbDeviceTag *gs);
 const double *get_gsvalues(RobotDevices *dev);
+
+#pragma endregion
+
+// ROBOT ACTUATION METHODS
+// ==========================================
+
+#pragma region ROBOT SENSING METHODS
 
 void set_avelocity(RobotDevices *dev, double v);
 void set_motor_avelocity(WbDeviceTag mt, double mv);

@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,8 @@
 
 #include "map.h"
 #include "robot.h"
+
+#define M_PI 3.14159265358979323846 /* pi */
 
 // ROBOT METHODS
 // ==========================================
@@ -71,6 +74,7 @@ void robot_sense(Robot *robot)
   v->rcoord = get_raw_coord(&robot->dev);
   v->coord = get_coord(&robot->dev);
   v->heading = get_heading(&robot->dev);
+  v->heading_rad = get_heading_rad(&robot->dev);
   v->gs0_v = get_gsvalue(&robot->dev.gs0);
   v->gs1_v = get_gsvalue(&robot->dev.gs1);
   v->gs2_v = get_gsvalue(&robot->dev.gs2);
@@ -79,8 +83,8 @@ void robot_sense(Robot *robot)
   v->rmv = get_motor_avelocity(&robot->dev.right_motor);
 
   printf(
-      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
-      v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->gs0_v, v->gs1_v, v->gs2_v);
+      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %c; hdr %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
+      v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->heading_rad, v->gs0_v, v->gs1_v, v->gs2_v);
 
   get_image(&robot->dev, &v->img);
 }
@@ -88,12 +92,94 @@ void robot_sense(Robot *robot)
 void robot_explore(Robot *robot)
 {
   // define checks for RobotExplore, basically continue if not DONE
+  RobotExploration *e = &robot->exp;
+
+  switch (e->state)
+  {
+  case EXP_SETUP: // await spin, then start exploration
+    if (robot->nav.state != NAV_SETUP) e->state = EXP_EXPLORE;
+    break;
+
+  case EXP_EXPLORE: // select next target coordinate or finish mapping
+    if (robot->nav.state != NAV_ROUTE) break;
+
+    Coord target;
+    if (next_target(robot, &target)) { robot->nav.goal = target; }
+    else
+    {
+      e->state = EXP_DONE;
+      map_save("robot.map");
+      printf("exploration done!!!\n");
+    }
+    break;
+
+  case EXP_DONE: // cleanup, maybe?
+    break;
+  }
 }
 
 void robot_navigate(Robot *robot)
 {
   // define checks for RobotNavigation, try altering states by what happened over senses
+  RobotNavigation *n = &robot->nav;
+  RobotValues *v = &robot->now;
+
+  switch (n->state)
+  {
+  case NAV_SETUP: // just spin, then start exploring
+    break;
+
+  case NAV_MAP: // map current cell paths
+    RobotFlags *f = &n->mapFlags;
+
+    // 1. latch, gs are primary factual and camera is residual temporal redundancy
+    bool cl, cr;
+    camera_sides(&v->img, &cl, &cr);
+
+    f->ahead |= (v->gs0_v < WHITE_THRESHOLD) || cl;
+    f->ahead |= (v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img);
+    f->ahead |= (v->gs2_v < WHITE_THRESHOLD) || cr;
+
+    // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
+    if (!cell_center(v->rcoord, n->target_cell))
+    {
+      // n->cruise_through = f->ahead;
+      break;
+    }
+
+    // 3. CONSOLIDATE at cell center, translate to north
+    Path relative[DIR_COUNT];
+    Path edges[DIR_COUNT];
+
+    relative[TURN_AHEAD] = f->ahead ? LINE : NO_LINE;
+    relative[TURN_RIGHT] = f->right ? LINE : NO_LINE;
+    relative[TURN_LEFT] = f->left ? LINE : NO_LINE;
+    relative[TURN_BACK] = LINE;
+
+    rotate_north(relative, edges, &robot->now.heading);
+
+    // 4. RECORD cell and push unvisited PATH neighbors
+    cell_record(v->coord, edges);
+
+    for (int d = 0; d < DIR_COUNT; d++)
+    {
+      if (edges[d] != LINE) continue;
+      Coord nback = cell_step(v->coord, d);
+      if (!cell_visited(nback)) robot->exp.explStack[robot->exp.top++] = nback;
+    }
+
+    clear_flags(f);
+    n->state = NAV_ROUTE;
+    break;
+
+  case NAV_ROUTE: // select next cell to map and calculate route there
+    break;
+
+  case NAV_NAVIGATE: // move robot controller to get to next cell
+    break;
+  }
 }
+
 void robot_actuate(Robot *robot) {}
 
 #pragma endregion
@@ -114,7 +200,7 @@ void robot_actuate(Robot *robot) {}
 // {
 //   while (stop(robot));
 //
-//   double start_headn = get_heading(robot);
+//   double start_headn = get_heading_rad(robot);
 //   double curr_headn = start_headn;
 //
 //   do
@@ -124,12 +210,28 @@ void robot_actuate(Robot *robot) {}
 //     wb_motor_set_velocity(robot->left_motor, spinL);
 //     wb_motor_set_velocity(robot->right_motor, spinR);
 //
-//     curr_headn = get_heading(robot);
+//     curr_headn = get_heading_rad(robot);
 //
 //   } while (curr_headn != start_headn); // needs another stopping condition
 //
 //   return 1;
 // }
+
+bool next_target(Robot *robot, Coord *out)
+{
+  RobotExploration *e = &robot->exp;
+
+  while (e->top > 0)
+  {
+    Coord c = e->explStack[--e->top];
+    if (!cell_visited(c))
+    {
+      *out = c;
+      return true;
+    }
+  }
+  return false;
+}
 
 #pragma endregion
 
@@ -164,7 +266,7 @@ double get_raw_y(RobotDevices *dev)
 Coord get_coord(RobotDevices *dev)
 {
   RCoord rcoord = get_raw_coord(dev);
-  return normalize(rcoord);
+  return cell_normalize(rcoord);
 }
 
 double get_x(RobotDevices *dev)
@@ -201,8 +303,27 @@ void camera_free(CameraImage *img)
   img->px = NULL;
 }
 
+/// @brief Gets robot heading in compass values (N,S,E,W)
+Direction get_heading(RobotDevices *dev)
+{
+  double hr = get_heading_rad(dev);     // (-pi/pi]
+  int q = (int)lround(hr / (M_PI / 2)); // -2..2
+
+  switch (q)
+  {
+  case 0:
+    return DIR_EAST;
+  case 1:
+    return DIR_NORTH;
+  case -1:
+    return DIR_SOUTH;
+  default:
+    return DIR_WEST;
+  }
+}
+
 /// @brief Gets robot heading in radians (-pi/pi]
-double get_heading(RobotDevices *dev)
+double get_heading_rad(RobotDevices *dev)
 {
   const double *n = wb_compass_get_values(dev->compass);
   return atan2(n[1], n[0]);
@@ -256,7 +377,7 @@ double get_lvelocity(RobotDevices *dev)
   }
 
   double dt = inst - prevt;
-  double v = (dt > 0) ? hypot(coord.x - prevc.x, coord.y - prevc.y) / (dev->timestep / 1000.0) : 0.0;
+  double v = (dt > 0) ? hypot(coord.x - prevc.x, coord.y - prevc.y) / dt : 0.0;
 
   prevc = coord;
   prevt = inst;

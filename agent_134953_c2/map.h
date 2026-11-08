@@ -2,28 +2,45 @@
 #define MAP_H
 
 #include <stdbool.h>
+#include <string.h>
 
 // WORLD DEFINITIONS
 // ==========================================
+#pragma region WORLD DEFINITIONS
 
 #define DURATION_MS 350000
+
+#pragma endregion
 
 // MAP DEFINITIONS
 // ==========================================
 
+#pragma region MAP DEFINITIONS
+
 #define MAX_CELLS (14 * 7)
 #define CELL_DISTANCE_M 0.15
+#define GPS_TOLERANCE_M 0.01
+#define DIR_COUNT 4
 
 typedef enum
 {
-  GOAL_RED = 0,
-  GOAL_GREEN = 1,
-  GOAL_YELLOW = 2,
-  GOAL_MAGENTA = 3,
-  GOAL_CYAN = 4,
-  GOAL_ORANGE = 5,
-  GOAL_WHITE = 6
+  GOAL_NONE = 0,
+  GOAL_RED = 1,
+  GOAL_GREEN = 2,
+  GOAL_YELLOW = 3,
+  GOAL_MAGENTA = 4,
+  GOAL_CYAN = 5,
+  GOAL_ORANGE = 6,
+  GOAL_WHITE = 7
 } Goals;
+
+typedef enum
+{
+  DIR_NORTH = 0,
+  DIR_SOUTH,
+  DIR_EAST,
+  DIR_WEST
+} Direction;
 
 typedef enum
 {
@@ -52,21 +69,41 @@ typedef struct
 
 typedef struct
 {
-  Cell cells[255];
+  Cell cells[MAX_CELLS];
 } Map;
+
+#pragma endregion
+
+// MAP METHODS
+// ==========================================
+
+#pragma region MAP METHODS
 
 void world_init(RCoord orgn);
 
 // MAP FUNCTIONS
 
 /// @brief Adds new cell to the map
-void add_cell(void);
+void map_init(Map *map);
+void map_mark(Map *map, Coord c, Direction d, Path p);
 
 /// @brief Creates a route between start and goal cell using Dijkstra's.
 /// @param start Starting cell, can be current one.
 /// @param goal Goal cell.
-void create_route(Cell start, Cell goal);
 
-Coord normalize(RCoord rcoords);
+void map_save(const char *filename);
+void map_print();
+
+Coord cell_normalize(RCoord rcoords);
+bool cell_equal(Coord a, Coord b);
+bool cell_center(RCoord a, Coord b);
+bool cell_visited(Coord cell);
+void cell_record(Coord cell, const Path edges[DIR_COUNT]);
+Coord cell_step(Coord cell, Direction dir);
+
+int route_create(Cell start, Cell goal, Coord *out);
+void route_print();
+
+#pragma endregion
 
 #endif // MAP_H
