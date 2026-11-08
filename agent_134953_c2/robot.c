@@ -401,7 +401,7 @@ bool camera_sides(CameraImage *img, bool *cl, bool *cr)
     if (run >= CM_SIDE_MIN_PX) *cl = true;
 
     run = 0;
-    for (int x = camx + 1; x < img->w && px_dark(img, x, y); x--) run++;
+    for (int x = camx + 1; x < img->w && px_dark(img, x, y); x++) run++;
     if (run >= CM_SIDE_MIN_PX) *cr = true;
   }
 
@@ -537,7 +537,7 @@ void set_motor_avelocity(WbDeviceTag mt, double mv)
 
 #pragma region HELPER METHODS
 
-static bool px_dark(const CameraImage *img, int x, int y)
+bool px_dark(const CameraImage *img, int x, int y)
 {
   CameraPixel p = img->px[y * img->w + x];
   return (p.r + p.g + p.b) / 3 < CM_DARK;

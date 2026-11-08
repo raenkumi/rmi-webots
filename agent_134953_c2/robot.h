@@ -239,6 +239,8 @@ void set_motor_avelocity(WbDeviceTag mt, double mv);
 
 #pragma region HELPER METHODS
 
+bool px_dark(const CameraImage *img, int x, int y);
+
 Direction translate_heading(Direction headn, TurnDirection dir);
 
 double angle_diff(double a, double b);
