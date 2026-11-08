@@ -102,7 +102,8 @@ void robot_explore(Robot *robot)
   switch (e->state)
   {
   case EXP_SETUP: // await spin, then start exploration
-    if (robot->nav.state != NAV_SETUP) e->state = EXP_EXPLORE;
+    if (robot->nav.state != NAV_SETUP) break;
+    e->state = EXP_EXPLORE;
     break;
 
   case EXP_EXPLORE: // select next target coordinate or finish mapping
@@ -518,7 +519,8 @@ Direction get_heading(RobotDevices *dev)
 double get_heading_rad(RobotDevices *dev)
 {
   const double *n = wb_compass_get_values(dev->compass);
-  return atan2(n[1], n[0]);
+  double a = atan2(n[1], n[0]) + M_PI / 2;
+  return atan2(sin(a), cos(a));
 }
 
 double get_gsvalue(WbDeviceTag *gs) { return wb_distance_sensor_get_value(*gs); }
