@@ -1,4 +1,7 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <webots/camera.h>
 #include <webots/compass.h>
 #include <webots/distance_sensor.h>
@@ -36,10 +39,10 @@ void robot_init(Robot *robot)
   wb_distance_sensor_enable(d->gs1, d->timestep);
   wb_distance_sensor_enable(d->gs2, d->timestep);
 
-  camera_init(&robot->now.img, &robot->dev);
+  camera_init(&robot->dev, &robot->now.img);
   wb_motor_set_position(d->left_motor, INFINITY);
   wb_motor_set_position(d->right_motor, INFINITY);
-  set_avelocity(&d, 0);
+  set_avelocity(d, 0);
 
   wb_robot_step(d->timestep);
 
@@ -117,7 +120,7 @@ bool stop(RobotDevices *robot)
   return stationary;
 }
 
-int turn(Robot *robot, TurnDirection dir) {}
+// int turn(Robot *robot, TurnDirection dir) {}
 
 int spin(RobotDevices *robot, SpinDirection spinDir)
 {
