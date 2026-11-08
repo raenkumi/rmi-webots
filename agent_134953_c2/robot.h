@@ -34,8 +34,9 @@
 #define MT_CRUISE_VELOCITY_RAD 5.0
 #define MT_TURN_VELOCITY_RAD 2.0
 #define MT_MAX_VELOCITY_RAD 6.0
-#define MT_KP_TURN 4.0  // P gain: err rad -> whell rad/s
-#define MT_MIN_TURN 0.4 // window so P don't slow when close to target
+#define MT_KP_TURN 4.0    // P gain: err rad -> whell rad/s
+#define MT_MIN_TURN 0.4   // window so P don't slow when close to target
+#define MT_SPIN_ENTER 0.3 // rad; heading error beyond this will force to turn in place
 
 // camera
 typedef struct
@@ -239,6 +240,7 @@ void set_motor_avelocity(WbDeviceTag mt, double mv);
 
 #pragma region HELPER METHODS
 
+double heading_toward(Coord from, Coord to);
 bool px_dark(const CameraImage *img, int x, int y);
 
 Direction translate_heading(Direction headn, TurnDirection dir);

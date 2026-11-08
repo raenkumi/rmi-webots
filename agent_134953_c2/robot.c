@@ -192,10 +192,51 @@ void robot_navigate(Robot *robot)
     }
     break;
 
-  case NAV_ROUTE: // select next cell to map and calculate route there
+  case NAV_ROUTE:                               // select next cell to map and calculate route there
+    if (robot->exp.state != EXP_EXPLORE) break; // done
+
+    n->path_len = route_create(v->coord, n->goal, n->path);
+    if (n->path_len <= 0)
+    {
+      printf("[nav] ROUTE: no path (%d,%d)->(%d,%d)\n", v->coord.x, v->coord.y, n->goal.x, n->goal.y);
+      break; // shouldn't happen, stay put
+    }
+
+    n->path_iter = 0;
+    n->target_cell = n->path[0];
+    n->target_heading = heading_toward(v->coord, n->target_cell);
+
+    printf(
+        "[nav] ROUTE->NAVIGATE goal=(%d,%d) len=%d first=(%d,%d) th=%.2f\n", n->goal.x, n->goal.y, n->path_len,
+        n->target_cell.x, n->target_cell.y, n->target_heading);
+
+    n->state = NAV_NAVIGATE;
     break;
 
   case NAV_NAVIGATE: // move robot controller to get to next cell
+    if (cell_center(v->rcoord, n->target_cell))
+    {
+      n->path_iter++;
+      if (n->path_iter >= n->path_len)
+      {
+        n->state = NAV_MAP;
+        break;
+      }
+      n->target_cell = n->path[n->path_iter];
+      n->target_heading = heading_toward(v->coord, n->target_cell);
+      printf(
+          "[nav] leg %d/%d ->(%d,%d) th=%.2f\n", n->path_iter + 1, n->path_len, n->target_cell.x, n->target_cell.y,
+          n->target_heading);
+
+      break;
+    }
+    bool last = (n->path_iter == n->path_len - 1);
+    if (last && cell_dist(v->rcoord, n->target_cell) < CELL_MAP_WINDOW_M)
+    {
+      printf("[nav] NAVIGATE->Map window (%d,%d)\n", n->target_cell.x, n->target_cell.y);
+      n->state = NAV_MAP;
+    }
+
     break;
   }
 }
@@ -559,6 +600,14 @@ void set_motor_avelocity(WbDeviceTag mt, double mv)
 // ==========================================
 
 #pragma region HELPER METHODS
+
+double heading_toward(Coord from, Coord to)
+{
+  if (to.y > from.y) return M_PI / 2;
+  if (to.x > from.x) return 0.0;
+  if (to.y < from.y) return -M_PI / 2;
+  return M_PI;
+}
 
 bool px_dark(const CameraImage *img, int x, int y)
 {
