@@ -57,9 +57,10 @@ void robot_init(Robot *robot)
   printf("init robot finished\n");
 }
 
-int robot_kill(void)
+int robot_kill(Robot *robot)
 {
   wb_robot_cleanup();
+  camera_free(&robot->now.img);
   return 0;
 }
 
@@ -67,7 +68,6 @@ void robot_sense(Robot *robot)
 {
   RobotValues *v = &robot->now;
 
-  v->origin = get_raw_coord(&robot->dev);
   v->rcoord = get_raw_coord(&robot->dev);
   v->coord = get_coord(&robot->dev);
   v->heading = get_heading(&robot->dev);
@@ -79,8 +79,8 @@ void robot_sense(Robot *robot)
   v->rmv = get_motor_avelocity(&robot->dev.right_motor);
 
   printf(
-      "lmv %.2f; rmv %.2f; x %.2f; y %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv, v->coord.x,
-      v->coord.y, v->heading, v->gs0_v, v->gs1_v, v->gs2_v);
+      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
+      v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->gs0_v, v->gs1_v, v->gs2_v);
 
   get_image(&robot->dev, &v->img);
 }
@@ -106,42 +106,30 @@ void robot_actuate(Robot *robot) {}
 /// @brief Stops the robot, only returns when linear (GPS) velocity is 0.
 /// @param robot
 /// @return
-bool stop(RobotDevices *robot)
-{
-  bool stationary = false;
-  set_avelocity(robot, 0);
-
-  while (!stationary)
-  {
-    double speed = get_lvelocity(robot);
-    stationary = speed < 1e-4;
-  }
-
-  return stationary;
-}
+// bool stop(RobotDevices *robot) {}
 
 // int turn(Robot *robot, TurnDirection dir) {}
 
-int spin(RobotDevices *robot, SpinDirection spinDir)
-{
-  while (stop(robot));
-
-  double start_headn = get_heading(robot);
-  double curr_headn = start_headn;
-
-  do
-  {
-    double spinL = spinDir == CLOCKWISE ? CRUISE_VELOCITY_RAD : -CRUISE_VELOCITY_RAD;
-    double spinR = spinDir == CLOCKWISE ? -CRUISE_VELOCITY_RAD : CRUISE_VELOCITY_RAD;
-    wb_motor_set_velocity(robot->left_motor, spinL);
-    wb_motor_set_velocity(robot->right_motor, spinR);
-
-    curr_headn = get_heading(robot);
-
-  } while (curr_headn != start_headn); // needs another stopping condition
-
-  return 1;
-}
+// int spin(RobotDevices *robot, SpinDirection spinDir)
+// {
+//   while (stop(robot));
+//
+//   double start_headn = get_heading(robot);
+//   double curr_headn = start_headn;
+//
+//   do
+//   {
+//     double spinL = spinDir == CLOCKWISE ? CRUISE_VELOCITY_RAD : -CRUISE_VELOCITY_RAD;
+//     double spinR = spinDir == CLOCKWISE ? -CRUISE_VELOCITY_RAD : CRUISE_VELOCITY_RAD;
+//     wb_motor_set_velocity(robot->left_motor, spinL);
+//     wb_motor_set_velocity(robot->right_motor, spinR);
+//
+//     curr_headn = get_heading(robot);
+//
+//   } while (curr_headn != start_headn); // needs another stopping condition
+//
+//   return 1;
+// }
 
 #pragma endregion
 
@@ -150,9 +138,9 @@ int spin(RobotDevices *robot, SpinDirection spinDir)
 
 #pragma region SENSING METHODS
 
-Coord get_raw_coord(RobotDevices *dev)
+RCoord get_raw_coord(RobotDevices *dev)
 {
-  Coord coord;
+  RCoord coord;
 
   const double *coords = wb_gps_get_values(dev->gps);
   coord.x = coords[0];
@@ -163,20 +151,20 @@ Coord get_raw_coord(RobotDevices *dev)
 
 double get_raw_x(RobotDevices *dev)
 {
-  Coord coord = get_raw_coord(dev);
+  RCoord coord = get_raw_coord(dev);
   return coord.x;
 }
 
 double get_raw_y(RobotDevices *dev)
 {
-  Coord coord = get_raw_coord(dev);
+  RCoord coord = get_raw_coord(dev);
   return coord.y;
 }
 
 Coord get_coord(RobotDevices *dev)
 {
-  const double *rcoords = wb_gps_get_values(dev->gps);
-  return normalize(rcoords);
+  RCoord rcoord = get_raw_coord(dev);
+  return normalize(rcoord);
 }
 
 double get_x(RobotDevices *dev)
@@ -252,11 +240,11 @@ double get_motor_avelocity(WbDeviceTag *mt) { return wb_motor_get_velocity(*mt);
 /// @return m/s
 double get_lvelocity(RobotDevices *dev)
 {
-  static Coord prevc;
+  static RCoord prevc;
   static double prevt;
   static bool primed = false;
 
-  Coord coord = get_raw_coord(dev);
+  RCoord coord = get_raw_coord(dev);
   double inst = wb_robot_get_time();
 
   if (!primed)

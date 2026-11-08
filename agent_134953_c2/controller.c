@@ -31,5 +31,5 @@ int main(int argc, char **argv)
     robot_actuate(&robot);
   }
 
-  return robot_kill();
+  return robot_kill(&robot);
 }

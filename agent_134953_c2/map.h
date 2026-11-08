@@ -35,13 +35,18 @@ typedef enum
 typedef struct
 {
   double x, y;
+} RCoord;
+
+typedef struct
+{
+  int x, y;
 } Coord;
 
 typedef struct
 {
   bool visited;
   Coord normalized;
-  Coord raw;
+  RCoord raw;
   Path n, s, e, w;
 } Cell;
 
@@ -50,7 +55,7 @@ typedef struct
   Cell cells[255];
 } Map;
 
-void world_init(Coord orgn);
+void world_init(RCoord orgn);
 
 // MAP FUNCTIONS
 
@@ -62,6 +67,6 @@ void add_cell(void);
 /// @param goal Goal cell.
 void create_route(Cell start, Cell goal);
 
-Coord normalize(const double *coords);
+Coord normalize(RCoord rcoords);
 
 #endif // MAP_H

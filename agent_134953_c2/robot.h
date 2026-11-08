@@ -89,8 +89,7 @@ typedef struct
 
 typedef struct
 {
-  Coord origin;    // x, y (raw, normalized to 0.0)
-  Coord rcoord;    // x, y (raw)
+  RCoord rcoord;   // x, y (raw)
   Coord coord;     // x, y
   CameraImage img; // todo: camera data structure
   double heading;
@@ -136,7 +135,7 @@ typedef struct
 
 /// @brief Creates Robot instance to be used
 void robot_init(Robot *robot);
-int robot_kill();
+int robot_kill(Robot *robot);
 
 /// @brief Reads all sensors of robot
 void robot_sense(Robot *robot);
@@ -157,7 +156,7 @@ double get_avelocity(RobotDevices *dev);
 double get_motor_avelocity(WbDeviceTag *mt);
 double get_lvelocity(RobotDevices *dev);
 
-Coord get_raw_coord(RobotDevices *dev);
+RCoord get_raw_coord(RobotDevices *dev);
 double get_raw_x(RobotDevices *dev);
 double get_raw_y(RobotDevices *dev);
 Coord get_coord(RobotDevices *dev);
