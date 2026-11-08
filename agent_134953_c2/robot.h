@@ -35,6 +35,7 @@
 #define MT_TURN_VELOCITY_RAD 2.0
 #define MT_MAX_VELOCITY_RAD 6.0
 #define MT_KP_TURN 4.0    // P gain: err rad -> whell rad/s
+#define MT_KP_LINE 0.004  // P gain: err rad -> whell rad/s
 #define MT_MIN_TURN 0.4   // window so P don't slow when close to target
 #define MT_SPIN_ENTER 0.3 // rad; heading error beyond this will force to turn in place
 

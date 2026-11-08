@@ -161,12 +161,12 @@ void robot_navigate(Robot *robot)
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    if ((v->gs1_v < GS_WHITE_THRESHOLD) || camera_ahead(&v->img)) s->edges[headn] = LINE;
     if ((v->gs0_v < GS_WHITE_THRESHOLD) || cl) s->edges[translate_heading(headn, TURN_LEFT)] = LINE;
     if ((v->gs2_v < GS_WHITE_THRESHOLD) || cr) s->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
     if (!cell_center(v->rcoord, n->target_cell)) break;
+    if ((v->gs1_v < GS_WHITE_THRESHOLD) || camera_ahead(&v->img)) s->edges[headn] = LINE;
 
     // 3. CONSOLIDATE at cell center, translate to north
     s->edges[translate_heading(headn, TURN_BACK)] = LINE;
@@ -215,6 +215,10 @@ void robot_navigate(Robot *robot)
     break;
 
   case NAV_NAVIGATE: // move robot controller to get to next cell
+    // steer at the cell center POINT each tick, so lateral offset converges
+    // (holding only a cardinal heading can never remove a sideways error)
+    n->target_heading = heading_to_center(v->rcoord, n->target_cell);
+
     if (cell_center(v->rcoord, n->target_cell))
     {
       n->path_iter++;
@@ -224,7 +228,6 @@ void robot_navigate(Robot *robot)
         break;
       }
       n->target_cell = n->path[n->path_iter];
-      n->target_heading = heading_toward(v->coord, n->target_cell);
       printf(
           "[nav] leg %d/%d ->(%d,%d) th=%.2f\n", n->path_iter + 1, n->path_len, n->target_cell.x, n->target_cell.y,
           n->target_heading);
@@ -235,6 +238,8 @@ void robot_navigate(Robot *robot)
     if (last && cell_dist(v->rcoord, n->target_cell) < CELL_MAP_WINDOW_M)
     {
       printf("[nav] NAVIGATE->Map window (%d,%d)\n", n->target_cell.x, n->target_cell.y);
+      // n->target_heading = heading_toward(v->coord, n->target_cell);
+      n->target_heading = round(v->heading_rad / (M_PI / 2)) * (M_PI / 2);
       n->state = NAV_MAP;
     }
 
@@ -356,9 +361,9 @@ void commit_cell(Robot *robot)
 
   for (int dir = 0; dir < MAP_DIR_COUNT; dir++)
   {
-    if (s->edges[dir] != LINE) continue;
-
-    Coord neighb = cell_step(here, dir);
+    Direction cdir = (robot->now.heading + dir) % MAP_DIR_COUNT;
+    if (s->edges[cdir] != LINE) continue;
+    Coord neighb = cell_step(here, cdir);
     if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
   }
 
@@ -519,7 +524,7 @@ Direction get_heading(RobotDevices *dev)
 double get_heading_rad(RobotDevices *dev)
 {
   const double *n = wb_compass_get_values(dev->compass);
-  double a = atan2(n[1], n[0]) + M_PI / 2;
+  double a = M_PI / 2 - atan2(n[1], n[0]);
   return atan2(sin(a), cos(a));
 }
 
@@ -634,26 +639,28 @@ bool drive_tick(Robot *robot) { return align_tick(robot, MT_CRUISE_VELOCITY_RAD)
 bool align_tick(Robot *robot, double wfv)
 {
   double err = angle_diff(robot->nav.target_heading, robot->now.heading_rad);
+  bool aligned = fabs(err) < CP_HEADING_TOL;
 
-  if (fabs(err) < CP_HEADING_TOL)
-  {
-    set_avelocity(&robot->dev, wfv, wfv);
+  if (aligned && wfv == 0.0)
+  { // pure spin reached its target: stop
+    set_avelocity(&robot->dev, 0, 0);
     return true;
   }
 
-  // get and clamp the robot's Wheel Steering Velocity (rad/s)
+  // steering correction never sleeps while driving: a standing error
+  // inside the tolerance would otherwise drift laterally forever
   double wsv = MT_KP_TURN * err;
   if (wsv > MT_CRUISE_VELOCITY_RAD) wsv = MT_CRUISE_VELOCITY_RAD;
   if (wsv < -MT_CRUISE_VELOCITY_RAD) wsv = -MT_CRUISE_VELOCITY_RAD;
 
   if (wfv == 0.0)
-  {
+  { // spin floor so the last degrees don't crawl
     if (wsv > 0 && wsv < MT_MIN_TURN) wsv = MT_MIN_TURN;
     if (wsv < 0 && wsv > -MT_MIN_TURN) wsv = -MT_MIN_TURN;
   }
 
-  set_avelocity(&robot->dev, wfv + wsv, wfv - wsv);
-  return false;
+  set_avelocity(&robot->dev, wfv - wsv, wfv + wsv);
+  return aligned;
 }
 
 #pragma endregion

@@ -154,3 +154,11 @@ double cell_dist(RCoord a, Coord b)
   double cy = origin.y + b.y * CELL_DISTANCE_M;
   return hypot(a.x - cx, a.y - cy);
 }
+
+/// @brief World bearing (radians) from a raw position to cell b's center.
+double heading_to_center(RCoord a, Coord b)
+{
+  double cx = origin.x + b.x * CELL_DISTANCE_M;
+  double cy = origin.y + b.y * CELL_DISTANCE_M;
+  return atan2(cy - a.y, cx - a.x);
+}

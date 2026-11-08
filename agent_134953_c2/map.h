@@ -104,6 +104,7 @@ bool cell_visited(Coord cell);
 void cell_record(Coord cell, const Path edges[MAP_DIR_COUNT]);
 Coord cell_step(Coord cell, Direction dir);
 double cell_dist(RCoord a, Coord b);
+double heading_to_center(RCoord a, Coord b);
 
 /// @brief Creates a route between start and goal cell using Dijkstra's.
 /// @param start Starting cell, can be current one.
