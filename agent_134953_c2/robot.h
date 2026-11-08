@@ -24,8 +24,9 @@
 
 // motors
 #define WHEEL_RADIUS_CM 3.0 // unknown
+#define SCAN_VELOCITY_RAD 2.0
 #define CRUISE_VELOCITY_RAD 5.0
-#define TURN_VELOCITY_RAD -2.0
+#define TURN_VELOCITY_RAD 2.0
 #define MAX_VELOCITY_RAD 6.28
 #define KP_TURN 4.0  // P gain: err rad -> whell rad/s
 #define MIN_TURN 0.4 // window so P don't slow when close to target
@@ -61,10 +62,13 @@ typedef enum
 
 typedef struct
 {
-  bool ahead;
-  bool left;
-  bool right;
-} RobotFlags;
+  Path edges[DIR_COUNT];
+  double accum;
+  double prev_rad;
+  bool primed;
+  bool done;
+  bool spin;
+} RobotScan;
 
 // actuation
 typedef enum
@@ -126,7 +130,7 @@ typedef struct
   double target_heading;
   Coord path[MAX_CELLS];
   int path_len, path_iter;
-  RobotFlags mapFlags;
+  RobotScan scanFlags;
 } RobotNavigation;
 
 typedef struct
@@ -178,7 +182,7 @@ void robot_actuate(Robot *robot);
 #pragma region ROBOT PRIVATE METHODS
 
 bool next_target(Robot *robot, Coord *out);
-void clear_flags(RobotFlags *flags);
+void scan_reset(RobotScan *scan);
 void rotate_north(Path *rel, Path *result, Direction *dir);
 
 #pragma endregion
@@ -227,6 +231,8 @@ void set_motor_avelocity(WbDeviceTag mt, double mv);
 // ==========================================
 
 #pragma region HELPER METHODS
+
+Direction translate_heading(Direction headn, TurnDirection dir);
 
 double angle_diff(double a, double b);
 bool align_tick(Robot *robot, double base);

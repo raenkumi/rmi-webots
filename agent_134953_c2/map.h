@@ -37,8 +37,8 @@ typedef enum
 typedef enum
 {
   DIR_NORTH = 0,
-  DIR_SOUTH,
   DIR_EAST,
+  DIR_SOUTH,
   DIR_WEST
 } Direction;
 
@@ -80,17 +80,11 @@ typedef struct
 #pragma region MAP METHODS
 
 void world_init(RCoord orgn);
-
 // MAP FUNCTIONS
 
 /// @brief Adds new cell to the map
 void map_init(Map *map);
 void map_mark(Map *map, Coord c, Direction d, Path p);
-
-/// @brief Creates a route between start and goal cell using Dijkstra's.
-/// @param start Starting cell, can be current one.
-/// @param goal Goal cell.
-
 void map_save(const char *filename);
 void map_print();
 
@@ -101,6 +95,9 @@ bool cell_visited(Coord cell);
 void cell_record(Coord cell, const Path edges[DIR_COUNT]);
 Coord cell_step(Coord cell, Direction dir);
 
+/// @brief Creates a route between start and goal cell using Dijkstra's.
+/// @param start Starting cell, can be current one.
+/// @param goal Goal cell.
 int route_create(Coord start, Coord goal, Coord *out);
 void route_print();
 

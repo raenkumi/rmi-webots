@@ -13,7 +13,7 @@ int main(int argc, char **argv)
   setvbuf(stdout, NULL, _IOLBF, 0);
   printf("starting controller\n");
 
-  Robot robot;
+  Robot robot = {0};
   robot_init(&robot);
   world_init(robot.now.rcoord);
 

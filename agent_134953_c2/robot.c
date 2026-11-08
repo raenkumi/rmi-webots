@@ -125,53 +125,86 @@ void robot_navigate(Robot *robot)
   // define checks for RobotNavigation, try altering states by what happened over senses
   RobotNavigation *n = &robot->nav;
   RobotValues *v = &robot->now;
+  RobotScan *scan = &n->scanFlags;
 
   switch (n->state)
   {
-  case NAV_SETUP: // just spin, then start exploring
+  case NAV_SETUP: // 360 spin to map origin, then start exploring
+
+    if (!scan->done) break;
+    if (!scan->spin)
+    {
+      for (int dir = 0; dir < DIR_COUNT; dir++)
+        if (scan->edges[dir] == UNKNOWN) scan->edges[dir] = NO_LINE;
+
+      cell_record(v->coord, scan->edges);
+
+      for (int dir = 0; dir < DIR_COUNT; dir++)
+      {
+        Coord neighb = cell_step(v->coord, dir);
+        if (scan->edges[dir] == LINE && !cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
+      }
+
+      scan->spin = true;
+      n->target_heading = round(v->heading_rad / (M_PI / 2) * (M_PI / 2));
+    }
+
+    if (fabs(angle_diff(n->target_heading, v->heading_rad)) < HEADING_TOL)
+    {
+      scan_reset(scan);
+      n->state = NAV_MAP;
+    }
+
     break;
 
   case NAV_MAP: // map current cell paths
-    RobotFlags *f = &n->mapFlags;
-
-    // 1. latch, gs are primary factual and camera is residual temporal redundancy
+    // 1. LATCH, gs are primary factual and camera is residual temporal redundancy
+    Direction headn = v->heading;
     bool cl, cr;
     camera_sides(&v->img, &cl, &cr);
 
-    f->left |= (v->gs0_v < WHITE_THRESHOLD) || cl;
-    f->ahead |= (v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img);
-    f->right |= (v->gs2_v < WHITE_THRESHOLD) || cr;
+    if ((v->gs1_v < WHITE_THRESHOLD) || camera_ahead(&v->img)) scan->edges[headn] = LINE;
+    if ((v->gs0_v < WHITE_THRESHOLD) || cl) scan->edges[translate_heading(headn, TURN_LEFT)] = LINE;
+    if ((v->gs2_v < WHITE_THRESHOLD) || cr) scan->edges[translate_heading(headn, TURN_RIGHT)] = LINE;
 
     // 2. PREVIEW, camera picks next heading preferring straight-ahead when possible
-    if (!cell_center(v->rcoord, n->target_cell))
-    {
-      // n->cruise_through = f->ahead;
-      break;
-    }
+    if (!cell_center(v->rcoord, n->target_cell)) break;
 
     // 3. CONSOLIDATE at cell center, translate to north
-    Path relative[DIR_COUNT];
-    Path edges[DIR_COUNT];
+    scan->edges[translate_heading(headn, TURN_BACK)] = LINE;
 
-    relative[TURN_AHEAD] = f->ahead ? LINE : NO_LINE;
-    relative[TURN_RIGHT] = f->right ? LINE : NO_LINE;
-    relative[TURN_LEFT] = f->left ? LINE : NO_LINE;
-    relative[TURN_BACK] = LINE;
+    for (int dir = 0; dir < DIR_COUNT; dir++)
+      if (scan->edges[dir] == UNKNOWN) scan->edges[dir] = NO_LINE;
 
-    rotate_north(relative, edges, &robot->now.heading);
+    // 4. RECORD cell to map
+    cell_record(v->coord, scan->edges);
 
-    // 4. RECORD cell and push unvisited PATH neighbors
-    cell_record(v->coord, edges);
-
-    for (int d = 0; d < DIR_COUNT; d++)
+    // 5. PUSH unvisited PATH neighbors to exploration stack
+    for (int dir = 0; dir < DIR_COUNT; dir++)
     {
-      if (edges[d] != LINE) continue;
-      Coord nback = cell_step(v->coord, d);
-      if (!cell_visited(nback)) robot->exp.explStack[robot->exp.top++] = nback;
+      if (scan->edges[dir] != LINE) continue;
+      Coord neighb = cell_step(v->coord, dir);
+      if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
     }
 
-    clear_flags(f);
-    n->state = NAV_ROUTE;
+    // 6. CONTINUE straigh ahead if possible, else turn
+    Coord fwd = cell_step(v->coord, headn);
+    bool go_ahead = (scan->edges[headn] == LINE) && !cell_visited(fwd);
+    scan_reset(scan);
+
+    if (go_ahead)
+    { // Overrides DFS stack by picking next cell as straight ahead
+      n->target_cell = fwd;
+      n->path_len = 1;
+      n->path_iter = 0;
+      n->path[0] = fwd;
+      n->state = NAV_NAVIGATE;
+    }
+    else
+    { // Route topmost DFS stack cell
+      n->state = NAV_ROUTE;
+    }
+
     break;
 
   case NAV_ROUTE: // select next cell to map and calculate route there
@@ -182,7 +215,31 @@ void robot_navigate(Robot *robot)
   }
 }
 
-void robot_actuate(Robot *robot) {}
+void robot_actuate(Robot *robot)
+{
+  switch (robot->nav.state)
+  {
+  case NAV_SETUP:
+    spin_tick(robot);
+    break;
+
+  case NAV_NAVIGATE:
+    // todo: implement
+    break;
+
+  default:
+    set_avelocity(&robot->dev, 0, 0);
+    break;
+  }
+}
+
+void scan_reset(RobotScan *scan)
+{
+  for (int dir = 0; dir < DIR_COUNT; dir++) scan->edges[dir] = NO_LINE;
+  scan->accum = 0;
+  scan->primed = false;
+  scan->done = false;
+}
 
 #pragma endregion
 
@@ -414,6 +471,8 @@ void set_motor_avelocity(WbDeviceTag mt, double mv)
 
 #pragma region HELPER METHODS
 
+Direction translate_heading(Direction headn, TurnDirection dir) { return (headn + dir) % DIR_COUNT; }
+
 double angle_diff(double a, double b) { return atan2(sin(a - b), cos(a - b)); }
 bool spin_tick(Robot *robot) { return align_tick(robot, 0.0); }
 bool turn_tick(Robot *robot) { return align_tick(robot, TURN_VELOCITY_RAD); }
@@ -434,7 +493,7 @@ bool align_tick(Robot *robot, double wfv)
   }
 
   // get and clamp the robot's Wheel Steering Velocity (rad/s)
-  double wsv = KP_TURN + err;
+  double wsv = KP_TURN * err;
   if (wsv > CRUISE_VELOCITY_RAD) wsv = CRUISE_VELOCITY_RAD;
   if (wsv < -CRUISE_VELOCITY_RAD) wsv = -CRUISE_VELOCITY_RAD;
 

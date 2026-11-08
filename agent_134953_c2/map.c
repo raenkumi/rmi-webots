@@ -5,7 +5,13 @@
 static Map map;
 static RCoord origin; // x, y (raw)
 
-void world_init(RCoord orgn) { origin = orgn; }
+void world_init(RCoord orgn)
+{
+  // note for future self: if capturing garbage at init,
+  // wait 3 ticks to get origin, else supervisor may have not
+  // teleported bot at starting cell.
+  origin = orgn;
+}
 
 // MAP FUNCTIONS
 
