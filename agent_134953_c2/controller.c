@@ -10,6 +10,9 @@
 int main(int argc, char **argv)
 {
   // 1. init robot
+  setvbuf(stdout, NULL, _IOLBF, 0);
+  printf("starting controller\n");
+
   Robot robot;
   robot_init(&robot);
 

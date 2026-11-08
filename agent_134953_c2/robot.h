@@ -1,10 +1,14 @@
-#include <stdio.h>
+#ifndef ROBOT_H
+#define ROBOT_H
+
 #include <webots/camera.h>
 #include <webots/compass.h>
 #include <webots/distance_sensor.h>
 #include <webots/gps.h>
 #include <webots/motor.h>
 #include <webots/robot.h>
+
+#include "map.h"
 
 // WORLD DEFINITIONS
 // ==========================================
@@ -127,3 +131,5 @@ const double *get_gsvalues(RobotDevices *r);
 
 void set_avelocity(RobotDevices *r, double v);
 void set_motor_velocity(WbDeviceTag m, double v);
+
+#endif // ROBOT_H

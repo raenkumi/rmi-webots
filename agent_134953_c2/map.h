@@ -1,3 +1,8 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdbool.h>
+
 // WORLD DEFINITIONS
 // ==========================================
 
@@ -58,3 +63,5 @@ void add_cell();
 void create_route(Cell start, Cell goal);
 
 Coord normalize(const double *coords);
+
+#endif // MAP_H

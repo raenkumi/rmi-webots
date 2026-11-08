@@ -46,6 +46,8 @@ void robot_init(Robot *robot)
   wb_robot_step(devs.timestep);
   robot->dev = devs;
   robot->now = robot_sense(robot);
+
+  printf("init robot finished\n");
 }
 
 RobotValues robot_sense(Robot *robot)
@@ -63,7 +65,7 @@ RobotValues robot_sense(Robot *robot)
   vals.gs2_v = get_gsvalue(&robot->dev.gs2);
 
   printf(
-      "lmv %.2f; rmv %.2f; x %.2f; y %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f", vals.lmv, vals.rmv, vals.coord.x,
+      "lmv %.2f; rmv %.2f; x %.2f; y %.2f; hdn %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", vals.lmv, vals.rmv, vals.coord.x,
       vals.coord.y, vals.heading, vals.gs0_v, vals.gs1_v, vals.gs2_v);
 
   return vals;
@@ -75,6 +77,7 @@ void robot_explore(Robot *robot)
 }
 
 void robot_navigate(Robot *robot) {}
+void robot_actuate(Robot *robot) {}
 
 #pragma endregion
 
@@ -136,7 +139,7 @@ double get_avelocity(RobotDevices *dev)
   double lv = wb_motor_get_velocity(dev->left_motor);
   double rv = wb_motor_get_velocity(dev->right_motor);
 
-  return lv + rv / 2;
+  return (lv + rv) / 2;
 }
 
 double get_motor_avelocity(WbDeviceTag *mt) { return wb_motor_get_velocity(*mt); }
@@ -158,7 +161,7 @@ Coord get_raw_coord(RobotDevices *dev)
 
   const double *coords = wb_gps_get_values(dev->gps);
   coord.x = coords[0];
-  coord.x = coords[1];
+  coord.y = coords[1];
 
   return coord;
 }
