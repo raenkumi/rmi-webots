@@ -72,6 +72,7 @@ int robot_kill(Robot *robot)
 void robot_sense(Robot *robot)
 {
   RobotValues *v = &robot->now;
+  static int dbg_tick = 0;
 
   v->rcoord = get_raw_coord(&robot->dev);
   v->coord = get_coord(&robot->dev);
@@ -84,9 +85,11 @@ void robot_sense(Robot *robot)
   v->lmv = get_motor_avelocity(&robot->dev.left_motor);
   v->rmv = get_motor_avelocity(&robot->dev.right_motor);
 
-  printf(
-      "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %d; hdr %.2f; g0 %.2f; g1 %.2f; g2 %.2f\n", v->lmv, v->rmv,
-      v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->heading_rad, v->gs0_v, v->gs1_v, v->gs2_v);
+  if (dbg_tick++ % 15 == 0)
+    printf(
+        "lmv %.2f; rmv %.2f; x %i; y %i; rx %.2f; ry %.2f; hdn %d; hdr %.2f; g0 %.0f; g1 %.0f; g2 %.0f\n", v->lmv,
+        v->rmv, v->coord.x, v->coord.y, v->rcoord.x, v->rcoord.y, v->heading, v->heading_rad, v->gs0_v, v->gs1_v,
+        v->gs2_v);
 
   get_image(&robot->dev, &v->img);
 }
@@ -106,7 +109,11 @@ void robot_explore(Robot *robot)
     if (robot->nav.state != NAV_ROUTE) break;
 
     Coord target;
-    if (next_target(robot, &target)) { robot->nav.goal = target; }
+    if (next_target(robot, &target))
+    {
+      robot->nav.goal = target;
+      printf("[expl] goal=(%d,%d) top=%d\n", target.x, target.y, robot->exp.top);
+    }
     else
     {
       e->state = EXP_DONE;
@@ -136,12 +143,14 @@ void robot_navigate(Robot *robot)
       commit_cell(robot);
       s->spin = true;
       n->target_heading = round(v->heading_rad / (M_PI / 2)) * (M_PI / 2);
+      printf("[setup] snap target=%.2f from hdr=%.2f\n", n->target_heading, v->heading_rad);
     }
 
     if (fabs(angle_diff(n->target_heading, v->heading_rad)) < CP_HEADING_TOL)
     {
       scan_reset(s);
       n->state = NAV_ROUTE;
+      printf("[nav] SETUP->ROUTE t=%.2f\n", wb_robot_get_time());
     }
     break;
 
@@ -174,9 +183,11 @@ void robot_navigate(Robot *robot)
       n->path_iter = 0;
       n->path[0] = fwd;
       n->state = NAV_NAVIGATE;
+      printf("[nav] MAP->NAVIGATE fwd=(%d,%d)\n", fwd.x, fwd.y);
     }
     else
     {
+      printf("[nav] MAP->ROUTE\n");
       n->state = NAV_ROUTE;
     }
     break;
@@ -248,6 +259,9 @@ bool scan_tick(Robot *robot)
   RobotScan *s = &robot->nav.scanFlags;
   RobotValues *v = &robot->now;
 
+  printf(
+      "[scan] latch dir=%d hdr=%.2f g= (%.0f, %.0f, %.0f)\n", v->heading, v->heading_rad, v->gs0_v, v->gs1_v, v->gs2_v);
+
   if (!s->primed)
   {
     scan_reset(s);
@@ -259,11 +273,19 @@ bool scan_tick(Robot *robot)
   s->prev_rad = v->heading_rad;
 
   if (v->gs0_v < GS_WHITE_THRESHOLD || v->gs1_v < GS_WHITE_THRESHOLD || v->gs2_v < GS_WHITE_THRESHOLD)
+  {
+    if (s->edges[v->heading] != LINE)
+      printf(
+          "[scan] latch dir=%d hdr=%.2f g=(%.0f,%.0f,%.0f)\n", v->heading, v->heading_rad, v->gs0_v, v->gs1_v,
+          v->gs2_v);
     s->edges[v->heading] = LINE;
+  }
 
   if (s->accum >= 2.0 * M_PI)
   {
     set_avelocity(&robot->dev, 0, 0);
+    printf(
+        "[scan] done accum=%.2f edges NESW=%d%d%d%d\n", s->accum, s->edges[0], s->edges[1], s->edges[2], s->edges[3]);
     return true;
   }
 
@@ -296,6 +318,10 @@ void commit_cell(Robot *robot)
 
     Coord neighb = cell_step(here, dir);
     if (!cell_visited(neighb)) robot->exp.explStack[robot->exp.top++] = neighb;
+
+    printf(
+        "[commit] (%d,%d) NESW=%d%d%d%d top=%d\n", here.x, here.y, s->edges[0], s->edges[1], s->edges[2], s->edges[3],
+        robot->exp.top);
   }
 }
 
@@ -575,7 +601,7 @@ bool align_tick(Robot *robot, double wfv)
     if (wsv < 0 && wsv > -MT_MIN_TURN) wsv = -MT_MIN_TURN;
   }
 
-  set_avelocity(&robot->dev, wfv - wsv, wfv + wsv);
+  set_avelocity(&robot->dev, wfv + wsv, wfv - wsv);
   return false;
 }
 
